@@ -1,0 +1,58 @@
+# read all hardcoded stuff from here
+
+# THE ASSET DETECTION & LOCALIZATION PIPELINE
+[COMMON]
+input = "path"
+workdir = "path"
+
+[VISUALIZATION]
+frames = false
+images = false
+midpoints = false
+# midpoint_ray_threshold = 10 # discard needed?
+
+
+[INITIALIZATION]
+reel_path = ""
+# undistortion here as well
+
+[DETECTION] 
+command = "" # done by docker just provide command/script to run it
+
+[RAYCASTING] # in: reel + detections   out: rays, midpoints, traj (also serialize to file)
+cam_frames_suffix = "jpg"
+process_sensors = ["cam0", "cam1", "cam2", "cam3", "cam5"]
+frames = 'all' # or specify subset FRAMES = ['2469', '2470', '2471', '2472', '2473']
+every_nth = 1
+debug = false
+
+[PREFILTERING] # distance 
+dist_from_cam = 30
+dist_from_cam_criterion = 'both' # or mean
+min_score = 0.4
+
+
+[FEATURES] # extra features by another NN
+# TODO: rotate stuff on runtime here
+softmax = true
+batch_size = 160
+# union_method = 'mul' 
+debug = false
+
+[SEMANTIC_FILTERING]
+product_feature_max_t = 0.4 # ignore FP detections
+
+[CLUSTERING]
+weighted_centroid = true
+
+# only one of the methods expected here
+[CLUSTERING.dbscan]
+eps = 1
+minPts = 2
+
+# OR (sub-dict in python --always means separate implementation ...OR)
+# [CLUSTERING.bihierchical]
+# t1 = 2 # spatial distance threshold
+# t2 = 0.3 # semantic distance threshold
+# alpha = 0.5 # in (0,1) -- weight of spatiality 
+
