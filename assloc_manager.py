@@ -12,6 +12,8 @@ import config
 from clustering import clustering_bihierarchical, clustering_dbscan
 from rerun_visualization import visualize_trajectory, visualize_midpoint_clusters, init_visualization, visualize_rays, visualize_points, SOME_COLORS
 from deep_features import genereate_deep_features_midpoints, get_id_to_label
+from tools.undistort_images import undistort_imgs
+from tools.rotate_images import rotate_imgs
 # skipping stages if already output stored
 
 UNDISTORTED_DIR = "reel_undistorted"
@@ -44,21 +46,24 @@ class AssetLocalizationManager:
     ## stage handling functions
     def initialization(self, cfg:config.Initialization):
         self.reel_frames_dir = Path(cfg.reel_frames)
+        # find yaml calibration
+        yamls = list(self.reel_frames_dir.glob("*.yaml"))
+        if len(yamls) > 1:
+            print(f"several yaml calibration file candidates found: \n{yamls}")
+            exit()
+        if len(yamls) < 1:
+            print("no calibration file found")
+            exit()
+        self.calib_p = yamls[0]
         self.work_dir = Path(cfg.work_dir)
         self.work_dir.mkdir(exist_ok=True, parents=True)
 
-        # TODO: create a undistorted copy AND rotated_frames
-        # TODO: just make undistortion copy and rotation into one operation
-        if not (self.work_dir/UNDISTORTED_DIR).exists():
-            # undistort here
-            pass
-        else:
-            print('undistortion already done')
-
         if not (self.work_dir/ROTATED_DIR).exists():
-            # rotate frames here
-            pass
-        
+            # undistort here
+            undistort_imgs(self.reel_frames_dir, self.work_dir/UNDISTORTED_DIR, self.calib_p)
+            rotate_imgs(self.work_dir/UNDISTORTED_DIR, self.work_dir/ROTATED_DIR)
+        else:
+            print('undistortion & rotation already done')
         # start rerun visualization
         init_visualization()
     
@@ -102,7 +107,7 @@ class AssetLocalizationManager:
     def prefiltering(self, cfg:config.Prefiltering):
         self.points_prefiltered = [p for (i,p) in enumerate(self.points) 
                                    if (p.l[0]+p.l[1])/2 < cfg.mean_dist_from_cam
-                                   #and p.l[0] < 30 and p.l[1] < cfg.max_dist_from_cam
+                                   and p.l[0] < cfg.max_dist_from_cam and p.l[1] < cfg.max_dist_from_cam
                                    and np.min((p.r1.score, p.r2.score)) > cfg.min_score]
         self.points = self.points_prefiltered
         print(f"pre-filtered: {len(self.points)} / {len(self.raycasting_result.points)}")
@@ -124,7 +129,7 @@ class AssetLocalizationManager:
                 
             cls_features = genereate_deep_features_midpoints(self.points, self.work_dir, debug=debug, 
                                                              softmax=cfg.softmax, num_classes=len(id_2_label), return_labels=True, 
-                                                             data_path=self.work_dir/ROTATED_DIR, batch_size=160)
+                                                             data_path=self.work_dir/ROTATED_DIR, data_rotated=True, batch_size=160)
             
             with open(self.work_dir/'features.npy', 'wb') as f:
                 np.save(f, cls_features)
@@ -216,9 +221,12 @@ class AssetLocalizationManager:
         if self.config.visualization.visualize_clusters:
             visualize_midpoint_clusters(self.clusters, 
                                         show_centroids=self.config.visualization.visualize_cluster_centroids)
-            
+
         for c in self.clusters:
             print(c)
+
+        with open(self.work_dir/"config_used.toml", 'w') as f:
+            toml.dump(self.config_dict, f)
 
 if __name__== "__main__":
     # config_path = Path(sys.argv[1])

@@ -71,7 +71,7 @@ def get_deep_features(rays:T.List[Ray], debug=False):
 
 # not that faster --probably the Image loading and cropping? 
 def get_deep_features_batched(rays:T.List[Ray], batch_size=64, softmax=True, num_classes=247, embeddings=False, debug=None,
-                              rotated_extracted_p=Path("/media/tomas/samQVO_4TB_D/drtinova_small_u_track/data_rotated")):
+                              data=Path("/media/tomas/samQVO_4TB_D/drtinova_small_u_track/data_rotated"), rotated=True):
 
     RESIZE_TO = (128,128)
     
@@ -113,8 +113,11 @@ def get_deep_features_batched(rays:T.List[Ray], batch_size=64, softmax=True, num
             new_filename = get_frame_filename(r.sensor, r.frame_id)
             if filename != new_filename:
                 filename = new_filename
-                img = Image.open(rotated_extracted_p / filename)            
-
+                if not rotated:
+                    img = Image.open(data / r.sensor / filename).rotate(90) # AHH: this doesn't work for some reason
+                else:
+                    img = Image.open(data / filename) # rotated data also expected all in flattened dir 
+                    
             img_batch.append(img.crop((r.bbox[0], r.bbox[1], r.bbox[0]+r.bbox[2], r.bbox[1]+r.bbox[3])))
 
             # if debug is not None: # run one image per batch aka superdumb extra inference
@@ -152,12 +155,15 @@ def get_deep_features_batched(rays:T.List[Ray], batch_size=64, softmax=True, num
 
 def genereate_deep_features_midpoints(midpoints:T.List[Point], out_p:Path,
                                       batch_size=32, softmax=True, embedding_size=8192, num_classes=247,
-                                      debug=None, return_labels=False, 
+                                      debug=None, return_labels=False, data_rotated=True,
                                       data_path="/media/tomas/samQVO_4TB_D/drtinova_small_u_track/data_rotated"):
-    ''' Same as get_deep_features_midpoints, but stores the matrices to the drive'''
-    RESIZE_TO = (128,128)
-    
-    rotated_extracted_p = Path(data_path)
+    ''' Generate deep features for a set of rays(bbox detections) given the data (imgs) 
+        args:
+            - debug: path to debug dir, where to save inference results (slow)
+            - data_rotated: if true expected data to be already rotated
+    '''
+
+    data_p = Path(data_path)
 
     model = ResnetTiny(num_out_classes=num_classes)
     checkpoint = torch.load(CHECKPOINT_P)
@@ -174,7 +180,7 @@ def genereate_deep_features_midpoints(midpoints:T.List[Point], out_p:Path,
             debug_dir = None
 
         feats, embeddings, stats = get_deep_features_batched(rays, batch_size=batch_size, softmax=softmax, num_classes=num_classes,
-                                                             rotated_extracted_p=rotated_extracted_p, debug=debug_dir)
+                                                             data=data_p, rotated=data_rotated, debug=debug_dir)
         cls_features[ridx,:,:] = feats
         
         # np.save(str(out_p/f"cls_features{r_lbl}"), cls_features)

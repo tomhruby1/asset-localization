@@ -24,7 +24,7 @@ class Visualization:
 class Initialization:
     reel_frames: Path # input
     work_dir: Path # target
-
+    undistort: bool
     # TODO: undistortion params
 
 @dataclass
