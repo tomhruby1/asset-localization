@@ -10,11 +10,12 @@ visualize_filtered = true
 # midpoint_ray_threshold = 10 # discard needed?
 
 [INITIALIZATION]
-reel_frames = "/media/tomas/samQVO_4TB_D/asset-detection-datasets/drtinova_small_u_track/data/reel_undistorted"
-work_dir = "/media/tomas/samQVO_4TB_D/assdet-experiments/sml_softmax_new"
+reel_frames = "/media/tomas/samQVO_4TB_D/asset-detection-datasets/drtinova_small_u_track/data/reel_0050_20231107-122212_prague_MX_XVN"
+work_dir = "/media/tomas/samQVO_4TB_D/assdet-experiments/sml_softmax_new2"
+undistort = true
 
 [DETECTION] 
-command = "" # done by docker just provide command/script to run it
+command = "" # done by docker just povide command/script to run it
 
 [RAYCASTING] # in: reel + detections   out: rays, midpoints, traj (also serialize to file)
 cam_frames_suffix = "jpg"
