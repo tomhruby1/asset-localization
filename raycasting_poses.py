@@ -4,9 +4,12 @@ import typing as T
 import numpy as np
 import cv2
 import rerun as rr
+from scipy.spatial.transform import Rotation
 
-from common import TrajectoryData
-from visualize_cameras import visualize_cams_rerun
+from data_structures import Ray
+import config
+from trajectory_data import TrajectoryData
+from common import get_coco_center, normalize_homcoords
 
 VISUALIZATION = True
 FRAMES = None #  {'502','552', '602', '702'}
@@ -15,6 +18,17 @@ EVERY_NTH_FRAME = 10 # if FRAMES not None should be 1
 SENSORS = ['cam0', 'cam1', 'cam2', 'cam3', 'cam5']
 # SENSORS = ['cam0', 'cam3']
 SUFFIX = ".jpg"
+
+
+# to unrotate the mx camera to align with detections -- nahh rotate the detection bounding boxes! 
+rotate_90_clockwise_mat = Rotation.from_euler('Z', -90, degrees=True).as_matrix()
+rotate_90_clockwise_mat_T = np.eye(4)
+rotate_90_clockwise_mat_T[:3,:3] = rotate_90_clockwise_mat
+
+# (x: right, y: up, z:back) to opencv by negating y,z 
+R_to_opencv = np.eye(3)
+R_to_opencv[1,1] = -1
+R_to_opencv[2,2] = -1
 
 def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
             calib_p:Path=None, gpx_p:Path=None):
@@ -25,6 +39,7 @@ def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
 
     traj = TrajectoryData(detections_p, gpx_p, calib_p)
     imgs = sorted(extracted_frames_p.rglob("*"+SUFFIX))
+    res = (4096, 3008)
     
     # create list of frames to log if every n-th
     frames_to_vis = None
@@ -52,10 +67,8 @@ def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP)
     rr.log("world", COORD_ARROW)
 
-    pose_label_list=[] # just to debug
-
     count = 0
-    vbray_id = 0
+    ray_id = 0
     for camera_frame in camera_transforms:
         count += 1
         frame_id = str(int(camera_frame.split('_')[-1]))
@@ -74,7 +87,17 @@ def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
         dets = traj.get_detections(img_name)
         img_p = extracted_frames_p / sensor / img_name
         img = cv2.imread(str(img_p))[:,:,[2,1,0]]
-        
+
+        # rotate 90 bounding boxes
+        if dets is not None:
+            bboxes_rot = []
+            for bbox in dets.bboxes:
+                x,y,w,h = bbox
+                bboxes_rot.append([
+                    res[0] - (y+h), x, h, w # rotating the bounding boxes 90-deg clockwise
+                ])
+            dets.bboxes = bboxes_rot
+
         # no visualization for now
         # if UNDISTORT and VIS_IMAGES:
         #     img = undistort_img(img, undistort_map, sensor)
@@ -85,10 +108,13 @@ def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
         T_camn_cam0 = traj.get_sensor_T(sensor)
 
         K, d, principal_point, focal_length = traj.get_sensor_intrinsics(sensor)
+        K, d, principal_point, focal_length = traj.get_sensor_intrinsics(sensor)
+        res = (4096, 3008) #(3008, 4096)  # depends on whether rotated 90 
+        K, d, principal_point, focal_length = traj.get_sensor_intrinsics(sensor) 
         res = (4096, 3008) #(3008, 4096)  # depends on whether rotated 90 
  
         # T_sensor_world transformation for current camera sensor frame
-        current_T = camera_transforms[camera_frame]   # T_gnss_world @ T_cam0_gnss @ T_camn_cam0 @ rotate_90_clockwise_mat_T # @ rotate_90_clockwise_mat_T when rotated prior to fit the detections
+        current_T = camera_transforms[camera_frame] 
 
         # TODO: make this separate from logic
         # visualize camera model + detection
@@ -102,17 +128,64 @@ def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
             rr.log(cam_entity+"/image", rr.Pinhole(width=res[0], height=res[1], 
                                                    focal_length=focal_length,
                                                    principal_point=principal_point,
-                                                   camera_xyz=rr.ViewCoordinates.RUB
+                                                   camera_xyz=rr.ViewCoordinates.RDF # correspond to open-CV x:right, y:down, z:forward
                                                 ))
             # if VIS_IMAGES:
             rr.log(cam_entity+"/image", rr.Image(img))
             
             if dets:
-                rr.log(cam_entity+"/image", rr.Boxes2D(array=np.array(dets.bboxes), 
+                rr.log(cam_entity+"/image", rr.Boxes2D(array=np.array(dets.bboxes), # np.array([1000,10,100,300])
                                                        array_format=rr.Box2DFormat.XYWH,
                                                        class_ids=dets.class_ids,
                                                        labels=dets.class_names
                                                     ))
+        # RAYCASTING
+        if dets is None: continue
+        # OPENCV undistort and get point in 3D coords relative to the camera
+        x_det_dist = np.asarray([get_coco_center(bbox) for bbox in dets.bboxes])
+        if len(x_det_dist) > 0:
+            x_det_dist = np.expand_dims(x_det_dist, axis=1) # expand dim for fisheye.undistortPoints to work
+            # if cfg.undistort:
+                # x_undist = cv2.fisheye.undistortPoints(x_det_dist, K, d)
+            # else:
+            x_undist = cv2.undistortPoints(x_det_dist, K, d) # not sure what is the meaning of distortion coeffs. here 
+            
+            # add 1 to get 3d homcoords.
+            x_3d = np.asarray([np.append(p[0], [1,1]) for p in x_undist]) # dim(x_det_dist) = (7,1,2)
+            x_3d_transf = [normalize_homcoords(current_T @ x) for x in x_3d] # point on ray in global coordinate frame
+            
+            # if cfg.visualize_frames: 
+            rr.log(f"world/projected_points/p_{count}", rr.Points3D(x_3d_transf, radii=0.02))
+            
+            # CAST A RAY
+            ray_origin = current_T[:3, 3] # ray origin target sensor's camera center
+            rays = []
+            ray_labels = []
+            for i, x in enumerate(x_3d_transf):
+                ray_dir = x - ray_origin # np.abs() ?  # get ray direction
+                ray_label = f"{frame_id}_{sensor}_{i}" 
+
+                # flatten?
+                # if cfg.flatten_rays:
+                #     ray_origin[2] = 0
+                #     ray_dir[2] = 0
+
+                if dets.global_instances is None:
+                    ray = Ray(ray_id, frame_id, sensor, dets.class_ids[i], dets.class_names[i], dets.scores[i], 
+                              dets.bboxes[i], ray_origin, ray_dir)
+                # add ground truth if available
+                else:
+                    ray = Ray(ray_id, frame_id, sensor, dets.class_ids[i], dets.class_names[i], dets.scores[i], 
+                              dets.bboxes[i], ray_origin, ray_dir, global_instance=dets.global_instances[i])                    
+                ray_id += 1   
+                rays.append(ray)
+                all_rays.append(ray)
+                ray_labels.append(ray_label)
+                all_ray_labels.append(ray_label)
+                rr.log("world/rays/"+ray_label, rr.Arrows3D(origins=ray_origin, vectors=ray_dir))
+
+            frame_rays[frame_id] = rays
+            frame_ray_labels[frame_id] = ray_labels    
             
 
 def get_camera_transforms(cams_p:Path) -> T.Dict[str, np.ndarray]:
@@ -155,7 +228,7 @@ def get_camera_transforms(cams_p:Path) -> T.Dict[str, np.ndarray]:
             # https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
             # Z in image coordinate system: camera back (opposite to viewing direction through camera)
             # T_rotmat[:3,:3] = np.linalg.inv(R_neg_z @ pose['rotmat']) # inverse gets the results as with building the matrix from the opk; that should be world->image
-            T_rotmat[:3,:3] = np.linalg.inv(pose['rotmat'])
+            T_rotmat[:3,:3] = np.linalg.inv(R_to_opencv @ pose['rotmat'])
             T_rotmat[:3, 3] = pose['location']
             camera_transforms[cam_frame_lbl] = T_rotmat
 

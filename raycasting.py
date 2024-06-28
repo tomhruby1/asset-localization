@@ -189,8 +189,7 @@ def main(cfg:config.Raycasting, extracted_frames_p:Path, detections_p:Path, cali
                 rr.log(f"world/projected_points/p_{count}", rr.Points3D(x_3d_transf, radii=0.02))
 
             # now rays in 3d
-            # ray origin target sensor's camera center
-            ray_origin = current_T[:3, 3]
+            ray_origin = current_T[:3, 3] # ray origin target sensor's camera center
             rays = []
             ray_labels = []
             for i, x in enumerate(x_3d_transf):
