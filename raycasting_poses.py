@@ -6,49 +6,37 @@ import cv2
 import rerun as rr
 from scipy.spatial.transform import Rotation
 
-from data_structures import Ray
+from data_structures import Ray, Point, RaycastingResult
 import config
 from trajectory_data import TrajectoryData
-from common import get_coco_center, normalize_homcoords
+from common import get_coco_center, normalize_homcoords, get_midpoint
 
-VISUALIZATION = True
-FRAMES = None #  {'502','552', '602', '702'}
-EVERY_NTH_FRAME = 10 # if FRAMES not None should be 1
-
-SENSORS = ['cam0', 'cam1', 'cam2', 'cam3', 'cam5']
-# SENSORS = ['cam0', 'cam3']
-SUFFIX = ".jpg"
-
-
-# to unrotate the mx camera to align with detections -- nahh rotate the detection bounding boxes! 
-rotate_90_clockwise_mat = Rotation.from_euler('Z', -90, degrees=True).as_matrix()
-rotate_90_clockwise_mat_T = np.eye(4)
-rotate_90_clockwise_mat_T[:3,:3] = rotate_90_clockwise_mat
 
 # (x: right, y: up, z:back) to opencv by negating y,z 
 R_to_opencv = np.eye(3)
 R_to_opencv[1,1] = -1
 R_to_opencv[2,2] = -1
 
-def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
+def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
             calib_p:Path=None, gpx_p:Path=None):
     ''' Perform raycasting + visualization of camera frames / detections'''
+
     # load data
     if calib_p is None: calib_p = extracted_frames_p/'calib.yaml'
     if gpx_p is None: gpx_p = extracted_frames_p/'extracted.gpx'
 
     traj = TrajectoryData(detections_p, gpx_p, calib_p)
-    imgs = sorted(extracted_frames_p.rglob("*"+SUFFIX))
+    imgs = sorted(extracted_frames_p.rglob("*."+cfg.cam_frames_suffix))
     res = (4096, 3008)
     
     # create list of frames to log if every n-th
     frames_to_vis = None
-    if EVERY_NTH_FRAME:
+    if cfg.every_nth:
         frames_to_vis = []
         count = 0 
         for img_p in imgs:
             if 'cam0' in img_p.stem:
-                if count % EVERY_NTH_FRAME == 0:
+                if count % cfg.every_nth == 0:
                     frame_id = str(int(img_p.stem.split('_')[-1]))
                     frames_to_vis.append(frame_id)
                 count += 1
@@ -63,7 +51,7 @@ def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
                                 vectors=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
                                 colors=[[255, 0, 0], [0, 255, 0], [0, 0, 255]],
                             )
-    rr.init('raycasting', spawn=True)
+    
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP)
     rr.log("world", COORD_ARROW)
 
@@ -72,16 +60,18 @@ def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
     for camera_frame in camera_transforms:
         count += 1
         frame_id = str(int(camera_frame.split('_')[-1]))
-        img_name = camera_frame + SUFFIX
+        img_name = camera_frame +"."+ cfg.cam_frames_suffix 
         if img_name not in traj.detections: continue
         sensor = camera_frame.split('_')[0]
-        if sensor not in SENSORS: continue
+        if sensor not in cfg.process_sensors: continue
 
         # visualize only subset of frames
-        if EVERY_NTH_FRAME:
+        if cfg.every_nth:
             if frame_id not in frames_to_vis: continue
-        if FRAMES:
-            if frame_id not in FRAMES: continue
+        if cfg.frames != 'all':
+            print(frame_id)
+            if frame_id not in cfg.frames and int(frame_id) not in cfg.frames:
+                continue
 
         # get coco detections and load the image
         dets = traj.get_detections(img_name)
@@ -118,7 +108,7 @@ def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
 
         # TODO: make this separate from logic
         # visualize camera model + detection
-        if VISUALIZATION:
+        if cfg.visualize_frames:
 
             frame_entity = "world/frames/frame_"+frame_id
             cam_entity = frame_entity+"/"+sensor
@@ -130,8 +120,8 @@ def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
                                                    principal_point=principal_point,
                                                    camera_xyz=rr.ViewCoordinates.RDF # correspond to open-CV x:right, y:down, z:forward
                                                 ))
-            # if VIS_IMAGES:
-            rr.log(cam_entity+"/image", rr.Image(img))
+            if cfg.visualize_images:
+                rr.log(cam_entity+"/image", rr.Image(img))
             
             if dets:
                 rr.log(cam_entity+"/image", rr.Boxes2D(array=np.array(dets.bboxes), # np.array([1000,10,100,300])
@@ -185,10 +175,31 @@ def raycast(camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
                 rr.log("world/rays/"+ray_label, rr.Arrows3D(origins=ray_origin, vectors=ray_dir))
 
             frame_rays[frame_id] = rays
-            frame_ray_labels[frame_id] = ray_labels    
-            
+            frame_ray_labels[frame_id] = ray_labels
 
-def get_camera_transforms(cams_p:Path) -> T.Dict[str, np.ndarray]:
+    ## Midpoint stuff
+    midpoints:T.List[Point] = []
+    for i, ray1 in enumerate(all_rays):
+        for j, ray2 in enumerate(all_rays):
+            if i != j and ray1.frame_id != ray2.frame_id:
+                midpoint, dist, l1, l2 = get_midpoint(ray1, ray2, l=True)
+                if l1 > 0 and l2 > 0:
+                    midpoints.append(Point(ray1, ray2, dist, midpoint, (l1,l2)))
+
+    result = RaycastingResult(midpoints, traj, all_rays)
+
+    
+    # debugging stuff
+    for p in midpoints:
+        print(p)
+
+    from rerun_visualization import visualize_points, visualize_rays
+    visualize_rays(all_rays)
+    visualize_points(midpoints)
+ 
+    return result
+
+def get_camera_transforms(cams_p:Path, sensors) -> T.Dict[str, np.ndarray]:
     ''' get camera transformation matrices given metashape opk exported file.
         Already projected coordinets expected. 
         TODO: take care of projection, datums, etc...
@@ -218,7 +229,7 @@ def get_camera_transforms(cams_p:Path) -> T.Dict[str, np.ndarray]:
     camera_transforms = {} # camera_frame -> 4x4 matrix
     frame_ids = np.unique([cam_frame.split('_')[-1] for cam_frame in camera_frames]) # whole rig frame first
     for fid in frame_ids: # also order by sensor
-        for sensor in SENSORS:
+        for sensor in sensors:
             cam_frame_lbl = sensor + "_frame_" + fid
             pose = camera_frames[cam_frame_lbl]
             pose['location'] = pose['location'] - origin # normalize location
@@ -242,6 +253,6 @@ if __name__=='__main__':
     detections_p = '/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new/detections.json'
 
     cam_transfs = get_camera_transforms(cams_p)
-    raycast(cam_transfs, Path(extracted_frames_dir), Path(detections_p))
+    result = raycast(cam_transfs, Path(extracted_frames_dir), Path(detections_p))
 
     print("done")

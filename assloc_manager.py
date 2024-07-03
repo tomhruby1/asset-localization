@@ -72,9 +72,9 @@ class AssetLocalizationManager:
     def detection(self, cfg:config.Detection):
         if not (self.work_dir/'detections.json').exists():
             # TODO: replace this with an inference call 
-            SML = "/media/tomas/samQVO_4TB_D/asset-detection-datasets/drtinova_small_u_track/detections/detections_undistorted.json"
-            MED = "/media/tomas/samQVO_4TB_D/asset-detection-datasets/drtinova_med_u_track/data_m/detections/detections.json"
-            shutil.copyfile(SML, self.work_dir/'detections.json')
+            detections_p = '/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new/detections.json'
+            # MED = "/media/tomas/samQVO_4TB_D/asset-detection-datasets/drtinova_med_u_track/data_m/detections/detections.json"
+            shutil.copyfile(detections_p, self.work_dir/'detections.json')
         
         self.detections_p = self.work_dir/'detections.json'
 
@@ -82,10 +82,16 @@ class AssetLocalizationManager:
     def raycasting(self, cfg:config.Raycasting):
         # in: undistorted_reel_frames, detection
         # out: raycasting_result
-        import raycasting
+        import raycasting_poses as raycasting
+
+        cams_p = '/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new/cameras_exported_projected_wgs84_utm_33n.txt'
         
         if not (self.work_dir/'raycasting_result.pickle').exists(): 
-            self.raycasting_result = raycasting.main(cfg, self.reel_frames_dir, self.detections_p)
+            # self.raycasting_result = raycasting.main(cfg, self.reel_frames_dir, self.detections_p)
+            
+            camera_poses = raycasting.get_camera_transforms(cams_p, cfg.process_sensors)
+            self.raycasting_result = raycasting.raycast(cfg, camera_poses, self.work_dir/UNDISTORTED_DIR, self.detections_p)
+            
             with open(self.work_dir/'raycasting_result.pickle', 'wb') as f:
                 pickle.dump(self.raycasting_result, f)
         else:
@@ -100,6 +106,8 @@ class AssetLocalizationManager:
             visualize_trajectory(self.traj)
         if self.config.visualization.visualize_rays:
             visualize_rays(self.raycasting_result.rays)
+
+        visualize_points(self.raycasting_result.points, entity='world/midpoints_testing', color=(0,255,0,255))
         
         print("raycasting done")
 
@@ -110,6 +118,9 @@ class AssetLocalizationManager:
                                    and p.l[0] < cfg.max_dist_from_cam and p.l[1] < cfg.max_dist_from_cam
                                    and np.min((p.r1.score, p.r2.score)) > cfg.min_score]
         self.points = self.points_prefiltered
+        
+        self.points = self.raycasting_result.points
+        
         print(f"pre-filtered: {len(self.points)} / {len(self.raycasting_result.points)}")
         # TODO: if visualize filtered
         visualize_points(self.points, entity="world/prefiltered", color=SOME_COLORS[0])
@@ -129,7 +140,7 @@ class AssetLocalizationManager:
                 
             cls_features = genereate_deep_features_midpoints(self.points, self.work_dir, debug=debug, 
                                                              softmax=cfg.softmax, num_classes=len(id_2_label), return_labels=True, 
-                                                             data_path=self.work_dir/ROTATED_DIR, data_rotated=True, batch_size=160)
+                                                             data_path=self.work_dir/UNDISTORTED_DIR, data_rotated=False, batch_size=160)
             
             with open(self.work_dir/'features.npy', 'wb') as f:
                 np.save(f, cls_features)
@@ -156,7 +167,7 @@ class AssetLocalizationManager:
         self.points_filtered = [p for (i,p) in enumerate(self.points) 
                                 if np.max(self.semantic_features[i]) > cfg.product_feature_max_t]
         print(f"semantically filtered: {len(self.points_filtered)} / {len(self.raycasting_result.points)}")
-        visualize_points(self.points_filtered, entity="world/semantically_filtered", color=SOME_COLORS[1])
+        visualize_points(self.raycasting_result.points, entity="world/semantically_filtered", color=SOME_COLORS[1])
 
 
         ## ray filter -- for each ray keep one point with the highest support
@@ -230,6 +241,6 @@ class AssetLocalizationManager:
 
 if __name__== "__main__":
     # config_path = Path(sys.argv[1])
-    config_path = 'config_default.toml'
+    config_path = 'config/config_v2.toml'
     assloc = AssetLocalizationManager(config_path)
     assloc.run()
