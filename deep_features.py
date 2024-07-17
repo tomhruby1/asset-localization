@@ -13,8 +13,8 @@ from traffic_signs_features.models import ResnetTiny
 from traffic_signs_features.inference import run_inference, get_prediction, run_batched_inference
 
 
-CHECKPOINT_P = "/home/tomas/traffi-signs-training/tinyResnet_128x128_merged_va_85/ResnetTiny_epoch_8.pth"
-CLASSES_P = "/home/tomas/traffi-signs-training/traffic_signs_features/total_data_merged/info.json"
+CHECKPOINT_P = "/home/tomas/traffi-signs-training/tinyResnet_128x128_nd_aug_va_991/ResnetTiny_epoch_28.pth"
+CLASSES_P = "/home/tomas/traffi-signs-training/traffic_signs_features/new_dataset/info.json"
 
 def get_id_to_label():
     with open(CLASSES_P) as f:
@@ -114,11 +114,12 @@ def get_deep_features_batched(rays:T.List[Ray], batch_size=64, softmax=True, num
             if filename != new_filename:
                 filename = new_filename
                 if not rotated:
-                    img = Image.open(data / r.sensor / filename).rotate(90) # AHH: this doesn't work for some reason
+                    img = Image.open(data / r.sensor / filename)
                 else:
-                    img = Image.open(data / filename) # rotated data also expected all in flattened dir 
+                    img = Image.open(data / filename)
                     
-            img_batch.append(img.crop((r.bbox[0], r.bbox[1], r.bbox[0]+r.bbox[2], r.bbox[1]+r.bbox[3])))
+            # TODO: I guess this PIL rotate has to be slower than np.rot90
+            img_batch.append(img.crop((r.bbox[0], r.bbox[1], r.bbox[0]+r.bbox[2], r.bbox[1]+r.bbox[3])).rotate(90, expand=True))
 
             # if debug is not None: # run one image per batch aka superdumb extra inference
             #     # img = img_batch[0]

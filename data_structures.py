@@ -134,8 +134,8 @@ class Cluster:
         label = f"cluster-{self.id}"
         if self.category is not None:
             label += f"|cat:{self.category}"
-        if self.feature_purity:
-            label += f"|pur:{self.feature_purity}"
+        # if self.feature_purity:
+        #     label += f"|pur:{self.feature_purity}"
 
         return label
     

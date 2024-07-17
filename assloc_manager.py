@@ -106,8 +106,6 @@ class AssetLocalizationManager:
             visualize_trajectory(self.traj)
         if self.config.visualization.visualize_rays:
             visualize_rays(self.raycasting_result.rays)
-
-        visualize_points(self.raycasting_result.points, entity='world/midpoints_testing', color=(0,255,0,255))
         
         print("raycasting done")
 
@@ -118,9 +116,7 @@ class AssetLocalizationManager:
                                    and p.l[0] < cfg.max_dist_from_cam and p.l[1] < cfg.max_dist_from_cam
                                    and np.min((p.r1.score, p.r2.score)) > cfg.min_score]
         self.points = self.points_prefiltered
-        
-        self.points = self.raycasting_result.points
-        
+                
         print(f"pre-filtered: {len(self.points)} / {len(self.raycasting_result.points)}")
         # TODO: if visualize filtered
         visualize_points(self.points, entity="world/prefiltered", color=SOME_COLORS[0])

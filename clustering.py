@@ -25,21 +25,21 @@ def clustering_dbscan(dist_spatial, min_samples, eps, points_filtered, semantic_
 
 
     # SEMANTIC CLUSTER SPLITTING -- split spatial cluster based on point's hypotheses
-    # if semantic_cluster_splitting:
-    #     midpoint_clusters = []
-    #     for cluster_label, cluster_points in midpoints_clustered.items():
-    #         if cluster_label == -1: continue
+    if semantic_cluster_splitting:
+        midpoint_clusters = []
+        for cluster_label, cluster_points in midpoints_clustered.items():
+            if cluster_label == -1: continue
 
-    #         cluster_split = {}
-    #         # A) based on detector class -- DUMB
-    #         for p in cluster_points:
-    #             cls = np.argmax(p.cls_feature)
-    #             if cls not in cluster_split:
-    #                 cluster_split[cls] = []
-    #             cluster_split[cls].append(p)
-    #         for cls, points in cluster_split.items():
-    #             midpoint_clusters.append(Cluster(points, len(midpoint_clusters)))
-    #         # B) based on features -- TODO
+            cluster_split = {}
+            # A) based on detector class -- DUMB
+            for p in cluster_points:
+                cls = np.argmax(p.cls_feature)
+                if cls not in cluster_split:
+                    cluster_split[cls] = []
+                cluster_split[cls].append(p)
+            for cls, points in cluster_split.items():
+                midpoint_clusters.append(Cluster(points, len(midpoint_clusters)))
+            # B) based on features -- TODO
 
     return midpoint_clusters, {} # no stats.. TODO
 

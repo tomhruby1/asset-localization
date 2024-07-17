@@ -187,15 +187,6 @@ def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Pa
                     midpoints.append(Point(ray1, ray2, dist, midpoint, (l1,l2)))
 
     result = RaycastingResult(midpoints, traj, all_rays)
-
-    
-    # debugging stuff
-    for p in midpoints:
-        print(p)
-
-    from rerun_visualization import visualize_points, visualize_rays
-    visualize_rays(all_rays)
-    visualize_points(midpoints)
  
     return result
 
@@ -248,6 +239,7 @@ def get_camera_transforms(cams_p:Path, sensors) -> T.Dict[str, np.ndarray]:
 
 if __name__=='__main__':
     cams_p = '/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new/cameras_exported_local.txt'
+    
     cams_p = '/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new/cameras_exported_projected_wgs84_utm_33n.txt'
     extracted_frames_dir = '/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new/reel_undistorted'
     detections_p = '/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new/detections.json'
