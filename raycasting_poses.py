@@ -191,8 +191,8 @@ def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Pa
     return result
 
 def get_camera_transforms(cams_p:Path, sensors) -> T.Dict[str, np.ndarray]:
-    ''' get camera transformation matrices given metashape opk exported file.
-        Already projected coordinets expected. 
+    ''' get camera transformation matrices given opk exported file.
+        Already projected coordinates expected. The origin is moved to the first camera zero.  
         TODO: take care of projection, datums, etc...
     '''
     cams_p = Path(cams_p)

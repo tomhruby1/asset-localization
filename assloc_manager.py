@@ -48,6 +48,7 @@ class AssetLocalizationManager:
         self.reel_frames_dir = Path(cfg.reel_frames)
         # find yaml calibration
         yamls = list(self.reel_frames_dir.glob("*.yaml"))
+        print(f"searching for calib. file in {yamls}:{self.reel_frames_dir}")
         if len(yamls) > 1:
             print(f"several yaml calibration file candidates found: \n{yamls}")
             exit()
@@ -84,7 +85,7 @@ class AssetLocalizationManager:
         # out: raycasting_result
         import raycasting_poses as raycasting
 
-        cams_p = '/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new/cameras_exported_projected_wgs84_utm_33n.txt'
+        cams_p = R'D:\assdet-experiments\drtinova_u_new_2\cameras_exported_projected_wgs84_utm_33n.txt'
         
         if not (self.work_dir/'raycasting_result.pickle').exists(): 
             # self.raycasting_result = raycasting.main(cfg, self.reel_frames_dir, self.detections_p)
@@ -235,8 +236,11 @@ class AssetLocalizationManager:
         with open(self.work_dir/"config_used.toml", 'w') as f:
             toml.dump(self.config_dict, f)
 
+    def ground_truth_compare(self):
+        pass
+
 if __name__== "__main__":
     # config_path = Path(sys.argv[1])
-    config_path = 'config/config_v2.toml'
+    config_path = 'config/config_v2_win.toml'
     assloc = AssetLocalizationManager(config_path)
     assloc.run()

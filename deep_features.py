@@ -13,8 +13,8 @@ from traffic_signs_features.models import ResnetTiny
 from traffic_signs_features.inference import run_inference, get_prediction, run_batched_inference
 
 
-CHECKPOINT_P = "/home/tomas/traffi-signs-training/tinyResnet_128x128_nd_aug_va_991/ResnetTiny_epoch_28.pth"
-CLASSES_P = "/home/tomas/traffi-signs-training/traffic_signs_features/new_dataset/info.json"
+CHECKPOINT_P = R"D:\ass-loc\traffic_signs_features\model\ResnetTiny_epoch_28.pth"
+CLASSES_P = R"D:\ass-loc\traffic_signs_features\model\dataset_info.json"
 
 def get_id_to_label():
     with open(CLASSES_P) as f:
@@ -133,7 +133,7 @@ def get_deep_features_batched(rays:T.List[Ray], batch_size=64, softmax=True, num
 
         # inference
         t_inference = time.monotonic()
-        cls_feat, emb_feat, labels = run_batched_inference(model, img_batch, RESIZE_TO, softmax_norm=softmax, pred_labels=True)
+        cls_feat, emb_feat, labels = run_batched_inference(model, img_batch, RESIZE_TO, softmax_norm=softmax, pred_labels=True, classes_p=CLASSES_P)
         stats['inference'] += time.monotonic() - t_inference
         cls_features[low_i:upp_i, :] = cls_feat.detach().cpu().numpy()
         if embeddings:
