@@ -33,6 +33,7 @@ class Detection:
 
 @dataclass
 class Raycasting:
+    camera_poses: Path # file with camera poses # TODO: optional
     cam_frames_suffix: str
     process_sensors: T.List[str]
     frames: T.Union[list, str] # list of frames or 'all'
@@ -78,8 +79,7 @@ class ClusteringBihierarchical(Clustering):
 
 @dataclass
 class Evaluation:
-    pass
-
+    ground_truth_landmarks: Path
 
 
 class Config:
