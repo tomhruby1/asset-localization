@@ -87,16 +87,14 @@ class AssetLocalizationManager:
         # out: raycasting_result
         import raycasting_poses as raycasting
 
-        CAMS_P = R'D:\assdet-experiments\drtinova_u_new_2\cameras_exported_projected_wgs84_utm_33n.txt'
-        GT_LANDMARKS_P = R'D:\asset-detection-datasets\drtinova_small_u_track\GNSS.csv' # TODO: move to config as param
-
         calib_p = self.work_dir/UNDISTORTED_DIR/'calib.yaml'
         gpx_p = self.work_dir/UNDISTORTED_DIR/'extracted.gpx'
 
-        camera_poses, self.coordsys_origin = raycasting.get_camera_transforms(CAMS_P, cfg.process_sensors)
+        camera_poses, self.coordsys_origin = raycasting.get_camera_transforms(cfg.camera_poses, cfg.process_sensors)
 
-        self.traj = TrajectoryData(self.detections_p, gpx_p, calib_p, 
-                                   landmark_gnss_p=GT_LANDMARKS_P, geo_coord_sys_origin=self.coordsys_origin)
+        self.traj = TrajectoryData(self.detections_p, gpx_p, calib_p, landmark_gnss_p=self.config.evaluation.ground_truth_landmarks, 
+                                   geo_coord_sys_origin=self.coordsys_origin)
+        
         visualize_ground_truth_landmarks(self.traj.landmarks)
 
         if not (self.work_dir/'raycasting_result.pickle').exists(): 
@@ -160,13 +158,10 @@ class AssetLocalizationManager:
             p.id = i # assign id to non-filtered point --so the cls_features matrices kept
             p.cls_feature_label = id_2_label[np.argmax(p.cls_feature)] 
 
-        # spatial distance
-        # --this probably shouldnt be computed for prefiltered, but to keep dimensions with semantic stuf --ok for now
-        # SUPER HIGH MEMORY REQS. TODO:remove
-        print(f"computing distance matrix for {len(self.points)} points...")
-        points_loc = [p.point for p in self.points]
-        self.dist_spatial = euclidean_distances(points_loc, points_loc)
-        self.dist_spatial += np.eye(self.dist_spatial.shape[0]) * 555 # don't merge a point with itself # TODO: handle the diagonal less idiotically
+        # spatial distance -- calculating this here is insane
+        # points_loc = [p.point for p in self.points]
+        # self.dist_spatial = euclidean_distances(points_loc, points_loc)
+        # self.dist_spatial += np.eye(self.dist_spatial.shape[0]) * 555 # don't merge a point with itself # TODO: handle the diagonal less idiotically
         # # np.save(self.work_dir/'dist_spatial.npy', self.dist_spatial)
 
     
@@ -177,7 +172,13 @@ class AssetLocalizationManager:
                                 if np.max(self.semantic_features[i]) > cfg.product_feature_max_t]
         print(f"semantically filtered: {len(self.points_filtered)} / {len(self.raycasting_result.points)}")
         visualize_points(self.raycasting_result.points, entity="world/semantically_filtered", color=SOME_COLORS[1])
+        # point.id --> point filtered index map 
+        pid_2_filt_idx = {p.id: i for i,p in enumerate(self.points_filtered)}
 
+        # build distance matrix indexed by filtered points
+        points_loc = [p.point for p in self.points_filtered]
+        self.dist_spatial = euclidean_distances(points_loc, points_loc)
+        self.dist_spatial += np.eye(self.dist_spatial.shape[0]) * 555 # don't merge a point with itself # TODO: handle the diagonal less idiotically
 
         ## ray filter -- for each ray keep one point with the highest support
         ## statistics and stuff
@@ -203,8 +204,9 @@ class AssetLocalizationManager:
         for ray_id in ray_points:
             neighborhood_magnitude = [0] * len(ray_points[ray_id]) 
             for i, dp in enumerate(ray_points[ray_id]):
-                p = dp[1]
-                close_points_ids = np.where(self.dist_spatial[p.id,:] < cfg.ray_epsilon_neighborhood)[0] # TODO: param
+                # for each point p along the ray get the number of points in the epsilon neighborhood = nbr_mag(p)
+                d, p = dp
+                close_points_ids = np.where(self.dist_spatial[pid_2_filt_idx[p.id],:] < cfg.ray_epsilon_neighborhood)[0]
                 neighborhood_magnitude[i] = len(close_points_ids)
                 
             ray_neighborhood_magnitude[ray_id] = neighborhood_magnitude
@@ -220,6 +222,7 @@ class AssetLocalizationManager:
         visualize_points(self.points_filtered, entity="world/filtered", color=SOME_COLORS[2])
 
         # recalculate the distance for filtered points -> final dist matrices used for clustering
+        # TODO: select from the original dist_spatial - don't compute again
         points_loc = [p.point for p in self.points_filtered]
         self.dist_spatial = euclidean_distances(points_loc, points_loc)
         self.dist_spatial += np.eye(self.dist_spatial.shape[0]) * 555 # don't merge a point with itself # TODO: handle the diagonal less idiotically
