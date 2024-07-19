@@ -38,7 +38,9 @@ def clustering_dbscan(dist_spatial, min_samples, eps, points_filtered, semantic_
                     cluster_split[cls] = []
                 cluster_split[cls].append(p)
             for cls, points in cluster_split.items():
-                midpoint_clusters.append(Cluster(points, len(midpoint_clusters)))
+                # use the same minimum points pts param as DBSCAN uses 
+                if len(points) > min_samples:
+                    midpoint_clusters.append(Cluster(points, len(midpoint_clusters)))
             # B) based on features -- TODO
 
     return midpoint_clusters, {} # no stats.. TODO

@@ -138,7 +138,7 @@ class AssetLocalizationManager:
         DEBUG_DIR = "features_debug"
 
         if (self.work_dir/'features.npy').exists():
-            print("features already computed, loading existing")
+            print("features already computed, loading existing...")
             cls_features = np.load(self.work_dir/'features.npy')
         else:
             debug = None
@@ -162,6 +162,8 @@ class AssetLocalizationManager:
 
         # spatial distance
         # --this probably shouldnt be computed for prefiltered, but to keep dimensions with semantic stuf --ok for now
+        # SUPER HIGH MEMORY REQS. TODO:remove
+        print(f"computing distance matrix for {len(self.points)} points...")
         points_loc = [p.point for p in self.points]
         self.dist_spatial = euclidean_distances(points_loc, points_loc)
         self.dist_spatial += np.eye(self.dist_spatial.shape[0]) * 555 # don't merge a point with itself # TODO: handle the diagonal less idiotically
@@ -169,7 +171,7 @@ class AssetLocalizationManager:
 
     
     def filtering(self, cfg:config.Filtering):
-        
+        print("FILTERING")
         # semantic filter
         self.points_filtered = [p for (i,p) in enumerate(self.points) 
                                 if np.max(self.semantic_features[i]) > cfg.product_feature_max_t]
@@ -228,6 +230,7 @@ class AssetLocalizationManager:
         self.dist_semantic = cosine_distances(points_semantic_feat, points_semantic_feat)
 
     def clustering(self, cfg:config.Clustering):
+        print("CLUSTERING")
         if 'dbscan' in self.config_dict['CLUSTERING']:
             self.clusters, _ = clustering_dbscan(self.dist_spatial, cfg.minPts, cfg.eps, self.points_filtered, semantic_cluster_splitting=cfg.semantic_cluster_splitting)
         elif 'bihierchical' in self.config_dict['CLUSTERING']:
