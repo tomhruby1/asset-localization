@@ -76,6 +76,11 @@ class ClusteringBihierarchical(Clustering):
     t2: float
     alpha: float
 
+@dataclass
+class Evaluation:
+    pass
+
+
 
 class Config:
     config_classes = {
@@ -87,7 +92,8 @@ class Config:
         'features': Features,
         'filtering': Filtering,
         'clustering': {'dbscan': ClusteringDBSCAN, 
-                       'bihierchical': ClusteringBihierarchical}
+                       'bihierchical': ClusteringBihierarchical},
+        'evaluation': Evaluation
     }
 
     def __init__(self, config_dict:dict):

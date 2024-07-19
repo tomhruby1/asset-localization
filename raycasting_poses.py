@@ -17,15 +17,11 @@ R_to_opencv = np.eye(3)
 R_to_opencv[1,1] = -1
 R_to_opencv[2,2] = -1
 
-def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Path, detections_p:Path,
-            calib_p:Path=None, gpx_p:Path=None):
+def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Path, traj:TrajectoryData):
     ''' Perform raycasting + visualization of camera frames / detections'''
 
     # load data
-    if calib_p is None: calib_p = extracted_frames_p/'calib.yaml'
-    if gpx_p is None: gpx_p = extracted_frames_p/'extracted.gpx'
-
-    traj = TrajectoryData(detections_p, gpx_p, calib_p)
+    # traj = TrajectoryData(detections_p, gpx_p, calib_p)
     imgs = sorted(extracted_frames_p.rglob("*."+cfg.cam_frames_suffix))
     res = (4096, 3008)
     
@@ -190,10 +186,16 @@ def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Pa
  
     return result
 
-def get_camera_transforms(cams_p:Path, sensors) -> T.Dict[str, np.ndarray]:
-    ''' get camera transformation matrices given metashape opk exported file.
-        Already projected coordinets expected. 
-        TODO: take care of projection, datums, etc...
+def get_camera_transforms(cams_p:Path, sensors) -> T.Union[T.Dict[str, np.ndarray], np.ndarray]:
+    ''' get camera transformation matrices given opk exported file.
+        Already projected coordinets expected. Coordinate system origin is moved to the first camera frame
+        TODO: take care of projection, datums, etc?
+        
+        args:
+            - cams_p: path to the exported camera poses
+            - sensor: list of camera sensors to process
+        return: (dict of camera_frame -> 4x4 transformation matrix, origin)
+
     '''
     cams_p = Path(cams_p)
     camera_frames = {} # parsed data from file
@@ -215,7 +217,7 @@ def get_camera_transforms(cams_p:Path, sensors) -> T.Dict[str, np.ndarray]:
                 print(ex)
 
     origin = camera_frames[list(camera_frames.keys())[0]]['location']
-    print(origin)
+    print("coordinate system origin set to:", origin)
     
     camera_transforms = {} # camera_frame -> 4x4 matrix
     frame_ids = np.unique([cam_frame.split('_')[-1] for cam_frame in camera_frames]) # whole rig frame first
@@ -234,7 +236,7 @@ def get_camera_transforms(cams_p:Path, sensors) -> T.Dict[str, np.ndarray]:
             T_rotmat[:3, 3] = pose['location']
             camera_transforms[cam_frame_lbl] = T_rotmat
 
-    return camera_transforms
+    return camera_transforms, origin
 
 
 if __name__=='__main__':

@@ -308,3 +308,24 @@ def visualize_detection_raycasting_points(detections, P, entity, ray_origin):
         # raylabels.append(raylabel)
         # rr.log(entity+"/ray_"+str(1i), ray)
         rr.log(entity+"/ray_"+str(i), ray)
+
+
+def visualize_ground_truth_landmarks(landmarks:dict):
+    points = []
+    descriptions = []
+    colors = []
+    for landmark in landmarks.values():
+        coord = list(landmark['projected_coord'])
+        coord_already_exits = np.any([np.allclose(coord, p) for p in points])
+        if coord_already_exits:
+            coord[-1] += 1.0
+        points.append(coord)
+        descriptions.append(landmark['id'])
+        
+        if landmark['class'].lower() in CLASS_COLOR:
+            colors.append(CLASS_COLOR[landmark['class'].lower()])
+        else:
+            colors.append(CLASS_COLOR['other'])
+
+    rr.log("world/ground_truth_landmarks", 
+           rr.Points3D(points, radii=0.3, labels=descriptions, colors=colors))
