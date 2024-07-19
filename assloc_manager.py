@@ -4,17 +4,19 @@ from pathlib import Path
 import typing as T
 import pickle
 import shutil
+import copy
 
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances, cosine_distances
 
 import config
 from clustering import clustering_bihierarchical, clustering_dbscan
-from rerun_visualization import visualize_trajectory, visualize_midpoint_clusters, init_visualization, visualize_rays, visualize_points, SOME_COLORS
+from rerun_visualization import visualize_trajectory, visualize_midpoint_clusters, init_visualization, visualize_rays, visualize_points, SOME_COLORS, visualize_ground_truth_landmarks
 from deep_features import genereate_deep_features_midpoints, get_id_to_label
 from tools.undistort_images import undistort_imgs
 from tools.rotate_images import rotate_imgs
-# skipping stages if already output stored
+from trajectory_data import TrajectoryData
+
 
 UNDISTORTED_DIR = "reel_undistorted"
 ROTATED_DIR = "data_rotated"
@@ -85,13 +87,21 @@ class AssetLocalizationManager:
         # out: raycasting_result
         import raycasting_poses as raycasting
 
-        cams_p = R'D:\assdet-experiments\drtinova_u_new_2\cameras_exported_projected_wgs84_utm_33n.txt'
-        
+        CAMS_P = R'D:\assdet-experiments\drtinova_u_new_2\cameras_exported_projected_wgs84_utm_33n.txt'
+        GT_LANDMARKS_P = R'D:\asset-detection-datasets\drtinova_small_u_track\GNSS.csv' # TODO: move to config as param
+
+        calib_p = self.work_dir/UNDISTORTED_DIR/'calib.yaml'
+        gpx_p = self.work_dir/UNDISTORTED_DIR/'extracted.gpx'
+
+        camera_poses, self.coordsys_origin = raycasting.get_camera_transforms(CAMS_P, cfg.process_sensors)
+
+        self.traj = TrajectoryData(self.detections_p, gpx_p, calib_p, 
+                                   landmark_gnss_p=GT_LANDMARKS_P, geo_coord_sys_origin=self.coordsys_origin)
+        visualize_ground_truth_landmarks(self.traj.landmarks)
+
         if not (self.work_dir/'raycasting_result.pickle').exists(): 
             # self.raycasting_result = raycasting.main(cfg, self.reel_frames_dir, self.detections_p)
-            
-            camera_poses = raycasting.get_camera_transforms(cams_p, cfg.process_sensors)
-            self.raycasting_result = raycasting.raycast(cfg, camera_poses, self.work_dir/UNDISTORTED_DIR, self.detections_p)
+            self.raycasting_result = raycasting.raycast(cfg, camera_poses, self.work_dir/UNDISTORTED_DIR, self.traj)
             
             with open(self.work_dir/'raycasting_result.pickle', 'wb') as f:
                 pickle.dump(self.raycasting_result, f)
@@ -101,7 +111,7 @@ class AssetLocalizationManager:
                 self.raycasting_result = pickle.load(f)
             
         self.points = self.raycasting_result.points
-        self.traj = self.raycasting_result.traj
+        # self.traj = self.raycasting_result.traj
 
         if self.config.visualization.visualize_trajectory:
             visualize_trajectory(self.traj)
@@ -236,8 +246,41 @@ class AssetLocalizationManager:
         with open(self.work_dir/"config_used.toml", 'w') as f:
             toml.dump(self.config_dict, f)
 
-    def ground_truth_compare(self):
-        pass
+    def evaluation(self, cfg:config.Evaluation):
+        dist_threshold = 2.0 # meters
+
+        matches = {l:None for l in self.traj.landmarks}
+        unnassigned_clusters = copy.deepcopy(self.clusters)
+        
+        for l_id, landmark in self.traj.landmarks.items():
+            # find the index of the closest cluster with the correct semantic class
+            cluster_dists = [np.linalg.norm(landmark['projected_coord'][:2] - c.centroid[:2]) 
+                             for c in unnassigned_clusters if c.category == landmark['class']]
+            if len(cluster_dists) > 0:
+                cl_idx = np.argmin(cluster_dists)
+                selected_cluster = unnassigned_clusters[cl_idx]
+                # check whether the distance is below threshold    
+                if np.linalg.norm(landmark['projected_coord'][:2] - selected_cluster.centroid[:2]) < dist_threshold:
+                    matches[l_id] = selected_cluster.id
+                    print(f"GT match: {l_id} <--> cluster-{selected_cluster.id}")
+                    print(f"class: {landmark['class']} x {selected_cluster.category}")
+                    unnassigned_clusters.pop(cl_idx)
+                else:
+                    print(f"distance too high for {l_id} <--> cluster-{selected_cluster.id}")
+                    print(np.linalg.norm(landmark['projected_coord'][:2] - selected_cluster.centroid[:2]))
+
+            if matches[l_id] is None:
+                print(f"no match for {l_id}")
+        
+        correct_count = 0
+        for m in matches.values():
+            if m is not None:
+                correct_count += 1
+
+        precision = correct_count / len(self.clusters)
+        recall = correct_count / len(self.traj.landmarks)
+        print(f"correctly localized: {correct_count} ")
+        print(f"precision: {precision}, recall: {recall}")
 
 if __name__== "__main__":
     # config_path = Path(sys.argv[1])

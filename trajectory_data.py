@@ -42,20 +42,32 @@ def convert_gpx_to_df(file, filename):
     return gpx_df
 
 
-def get_trajectory(gpx_file_p, visualize=False) -> T.Tuple[pd.DataFrame, proj.Proj]:
+def get_trajectory(gpx_file_p, origin:np.ndarray=None, visualize=False) -> T.Tuple[pd.DataFrame, proj.Proj]:
     '''
     Load gpx, convert to pandas df, project GNSS coords to plane.
     Planar coodinates 'x', 'y', 'z' set such that origin of the coordinate frame is placed at the first trackpoint
     'x' and 'y' projected, 'z' is just elevation normalized by the first track point elevation
+    
+    args:
+        - gpx_file_p: path to gpx file
+        - origin: origin of the new coordinate frame, if None, the first trackpoint is used
+    
     returns: 
         - resulting dataframe 
         - pyproj.proj projection
+        
     '''
     with open(gpx_file_p) as f:
         gpx_df = convert_gpx_to_df(f,"reel_gpx")
 
     wgs84 = CRS.from_string("EPSG:4326") # LatLon with WGS84 datum used by GPS units and Google Earth 
 
+
+    # if origin is not None:
+    #     lat_0, lon_0, ele_0 = origin
+    # else:
+    # ^^^ THIS is in northing/easting but we need lat/long for GPX file
+    
     lat_0 = gpx_df.iloc[0].Latitude
     lon_0 = gpx_df.iloc[0].Longitude
     ele_0 = gpx_df.iloc[0].Elevation # elevation zero 
@@ -84,7 +96,16 @@ def get_trajectory(gpx_file_p, visualize=False) -> T.Tuple[pd.DataFrame, proj.Pr
 class TrajectoryData:
     '''Data container for both the gpx GNSS/XVN data and detections'''
     
-    def __init__(self, detections_p:Path, gpx_p:Path, calibration_p:Path, landmark_gnss_p:Path=None):
+    def __init__(self, detections_p:Path, gpx_p:Path, calibration_p:Path, landmark_gnss_p:Path=None, 
+                 geo_coord_sys=None, geo_coord_sys_origin=None):
+        '''
+        args:
+            - detections_p: path to detections json file
+            - gpx_p: path to gpx file
+            - calibration_p: path to calibration file
+            - landmark_gnss_p: path to csv with ground truth landmarks
+            - geo_coord_sys: coordinate system for the projected trajector
+        '''
         self.detections_p = Path(detections_p)
         self.gpx_p = Path(gpx_p)
         self.calib_p = Path(calibration_p)
@@ -97,7 +118,7 @@ class TrajectoryData:
         with open(detections_p, 'r') as f:
             self.detections = json.load(f)
 
-        self.gpx_df, self.coord_proj = get_trajectory(gpx_p)
+        self.gpx_df, self.coord_proj = get_trajectory(gpx_p, origin=geo_coord_sys_origin)
         self.frames = self.gpx_df.Frame.values # list of string frame ids
 
         datum = CRS.from_string("EPSG:4326")
@@ -124,13 +145,18 @@ class TrajectoryData:
                 if row.Name in self.landmarks:
                     raise Exception(f"Multiple instances of the same ground truth landmark label {row.Name}")
                 self.landmarks[row.Name] = {
+                    'id': row.Name,
+                    'class': row.Name.split('_')[0],
                     'latitude': row.Latitude,
                     'longitude': row.Longitude,
-                    'projected_coord': self.coord_transformer.transform(row.Longitude, row.Latitude)
+                    # 'projected_coord': self.coord_transformer.transform(row.Longitude, row.Latitude)
                 }
-        # static transforms
-        self.T_cam0_gnss = None
-        self.T_rotate_90_clockwise = None
+                if geo_coord_sys_origin is not None:
+                    self.landmarks[row.Name]['projected_coord'] = (row.Easting - geo_coord_sys_origin[0], 
+                                                                   row.Northing - geo_coord_sys_origin[1],
+                                                                   row.Elevation - geo_coord_sys_origin[2])
+                else:
+                    self.landmarks[row.Name]['projected_coord'] = (row.Easting, row.Northing)
 
     def get_frame_image_names(self, frame_id) -> dict:
         '''get image names from integer frame id'''
