@@ -52,6 +52,8 @@ class Prefiltering:
 
 @dataclass
 class Features:
+    checkpoint: Path
+    classes_info: Path
     softmax: bool
     batch_size: int
     debug: bool
@@ -80,6 +82,12 @@ class ClusteringBihierarchical(Clustering):
 @dataclass
 class Evaluation:
     ground_truth_landmarks: Path
+    
+@dataclass
+class Map:
+    utm_zone: int
+    map_center: int
+    map_zoom: int
 
 
 class Config:
@@ -93,7 +101,8 @@ class Config:
         'filtering': Filtering,
         'clustering': {'dbscan': ClusteringDBSCAN, 
                        'bihierchical': ClusteringBihierarchical},
-        'evaluation': Evaluation
+        'evaluation': Evaluation,
+        'map':Map,
     }
 
     def __init__(self, config_dict:dict):

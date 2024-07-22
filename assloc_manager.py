@@ -5,6 +5,7 @@ import typing as T
 import pickle
 import shutil
 import copy
+import json
 
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances, cosine_distances
@@ -12,10 +13,12 @@ from sklearn.metrics.pairwise import euclidean_distances, cosine_distances
 import config
 from clustering import clustering_bihierarchical, clustering_dbscan
 from rerun_visualization import visualize_trajectory, visualize_midpoint_clusters, init_visualization, visualize_rays, visualize_points, SOME_COLORS, visualize_ground_truth_landmarks
-from deep_features import genereate_deep_features_midpoints, get_id_to_label
+from deep_features import genereate_deep_features_midpoints
 from tools.undistort_images import undistort_imgs
 from tools.rotate_images import rotate_imgs
 from trajectory_data import TrajectoryData
+from evaluation import fuzzy_PP
+from map import MapVisualizer
 
 
 UNDISTORTED_DIR = "reel_undistorted"
@@ -131,8 +134,11 @@ class AssetLocalizationManager:
         visualize_points(self.points, entity="world/prefiltered", color=SOME_COLORS[0])
     
     def features(self, cfg:config.Features):
-        id_2_label = get_id_to_label()
         
+        with open(cfg.classes_info) as f:
+            classes_data = json.load(f)
+        self.id_to_label = classes_data['id_to_label']
+
         DEBUG_DIR = "features_debug"
 
         if (self.work_dir/'features.npy').exists():
@@ -143,8 +149,8 @@ class AssetLocalizationManager:
             if cfg.debug:
                 debug = self.work_dir/DEBUG_DIR
                 
-            cls_features = genereate_deep_features_midpoints(self.points, self.work_dir, debug=debug, 
-                                                             softmax=cfg.softmax, num_classes=len(id_2_label), return_labels=True, 
+            cls_features = genereate_deep_features_midpoints(self.points, self.work_dir, cfg.checkpoint, self.id_to_label, debug=debug, 
+                                                             softmax=cfg.softmax, num_classes=len(self.id_to_label), return_labels=True, 
                                                              data_path=self.work_dir/UNDISTORTED_DIR, data_rotated=False, batch_size=160)
             
             with open(self.work_dir/'features.npy', 'wb') as f:
@@ -156,7 +162,7 @@ class AssetLocalizationManager:
         for i,p in enumerate(self.points):
             p.cls_feature = self.semantic_features[i]
             p.id = i # assign id to non-filtered point --so the cls_features matrices kept
-            p.cls_feature_label = id_2_label[np.argmax(p.cls_feature)] 
+            p.cls_feature_label = self.id_to_label[np.argmax(p.cls_feature)] 
 
         # spatial distance -- calculating this here is insane
         # points_loc = [p.point for p in self.points]
@@ -253,43 +259,69 @@ class AssetLocalizationManager:
             toml.dump(self.config_dict, f)
 
     def evaluation(self, cfg:config.Evaluation):
-        dist_threshold = 2.0 # meters
+        dist_threshold = 1.0 # target in meters
+        dist_max_threshold = 3.0
 
-        matches = {l:None for l in self.traj.landmarks}
-        unnassigned_clusters = copy.deepcopy(self.clusters)
+        pp, fn, matches = fuzzy_PP(self.clusters, self.traj.landmarks, 
+                                   t=dist_threshold, t_max=dist_max_threshold, planar=True)
+        print(50*"-")
+        print(f"PP: {pp}/{len(self.traj.landmarks)}")
+        print(f"FN: {fn}/{len(self.traj.landmarks)}")
+
         
-        for l_id, landmark in self.traj.landmarks.items():
-            # find the index of the closest cluster with the correct semantic class
-            cluster_dists = [np.linalg.norm(landmark['projected_coord'][:2] - c.centroid[:2]) 
-                             for c in unnassigned_clusters if c.category == landmark['class']]
-            if len(cluster_dists) > 0:
-                cl_idx = np.argmin(cluster_dists)
-                selected_cluster = unnassigned_clusters[cl_idx]
-                # check whether the distance is below threshold    
-                if np.linalg.norm(landmark['projected_coord'][:2] - selected_cluster.centroid[:2]) < dist_threshold:
-                    matches[l_id] = selected_cluster.id
-                    print(f"GT match: {l_id} <--> cluster-{selected_cluster.id}")
-                    print(f"class: {landmark['class']} x {selected_cluster.category}")
-                    unnassigned_clusters.pop(cl_idx)
-                else:
-                    print(f"distance too high for {l_id} <--> cluster-{selected_cluster.id}")
-                    print(np.linalg.norm(landmark['projected_coord'][:2] - selected_cluster.centroid[:2]))
+        precision = pp / len(self.clusters)
+        recall = pp / len(self.traj.landmarks)
 
-            if matches[l_id] is None:
-                print(f"no match for {l_id}")
-        
-        correct_count = 0
-        for m in matches.values():
-            if m is not None:
-                correct_count += 1
 
-        precision = correct_count / len(self.clusters)
-        recall = correct_count / len(self.traj.landmarks)
-        print(f"correctly localized: {correct_count} ")
         print(f"precision: {precision}, recall: {recall}")
+
+        # matches = {l:None for l in self.traj.landmarks}
+        # unnassigned_clusters = copy.deepcopy(self.clusters)
+        
+        # for l_id, landmark in self.traj.landmarks.items():
+        #     # find the index of the closest cluster with the correct semantic class
+        #     cluster_dists = [np.linalg.norm(landmark['projected_coord'][:2] - c.centroid[:2]) 
+        #                      for c in unnassigned_clusters if c.category == landmark['class']]
+        #     if len(cluster_dists) > 0:
+        #         cl_idx = np.argmin(cluster_dists)
+        #         selected_cluster = unnassigned_clusters[cl_idx]
+        #         # check whether the distance is below threshold    
+        #         if np.linalg.norm(landmark['projected_coord'][:2] - selected_cluster.centroid[:2]) < dist_threshold:
+        #             matches[l_id] = selected_cluster.id
+        #             print(f"GT match: {l_id} <--> cluster-{selected_cluster.id}")
+        #             print(f"class: {landmark['class']} x {selected_cluster.category}")
+        #             unnassigned_clusters.pop(cl_idx)
+        #         else:
+        #             print(f"distance too high for {l_id} <--> cluster-{selected_cluster.id}")
+        #             print(np.linalg.norm(landmark['projected_coord'][:2] - selected_cluster.centroid[:2]))
+
+        #     if matches[l_id] is None:
+        #         print(f"no match for {l_id}")
+        
+        # correct_count = 0
+        # for m in matches.values():
+        #     if m is not None:
+        #         correct_count += 1
+
+        # precision = correct_count / len(self.clusters)
+        # recall = correct_count / len(self.traj.landmarks)
+        # print(f"correctly localized: {correct_count} ")
+        # print(f"precision: {precision}, recall: {recall}")
+
+    def map(self, cfg:config.Map):
+        map = MapVisualizer(map_center=cfg.map_center, zoom=cfg.map_zoom)
+        
+        map.add_clusters(self.clusters, utm_zone=cfg.utm_zone, 
+                          coord_sys_translation=self.coordsys_origin)
+        
+        map.add_ground_truth(self.traj.landmarks, utm_zone=cfg.utm_zone, 
+                             coord_sys_translation=self.coordsys_origin)
+        map.show()   
+
+        print(f"done") 
 
 if __name__== "__main__":
     # config_path = Path(sys.argv[1])
-    config_path = 'config/config_v2_win.toml'
+    config_path = 'config/latest.toml'
     assloc = AssetLocalizationManager(config_path)
     assloc.run()
