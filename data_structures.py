@@ -139,6 +139,19 @@ class Cluster:
 
         return label
     
+    def export(self, out_p:Path):
+        ''' Export cluster as JSON'''
+        cluster_data = {
+            'category': self.category,
+            'centroid': self.centroid.tolist(),
+            'points_count': len(self.points),
+            'semantic_features': [p.cls_feature.tolist() for p in self.points], 
+            'r1_semantic_features': [p.r1.cls_feature.tolist() for p in self.points],
+            'r2_semantic_features': [p.r2.cls_feature.tolist() for p in self.points]
+        }
+        with open(out_p, 'w') as f:
+            json.dump(cluster_data, f, indent=2)
+    
     def get_str_details(self) -> str:
         # if self.category:
         label = str(self)
@@ -189,8 +202,9 @@ class Cluster:
 
             score_class[p.r1.class_name] += p.r1.score
             score_class[p.r2.class_name] += p.r2.score
-            weight = (p.r1.score + p.r2.score)/2 # TODO: think this through
-            self.weight_sum += weight
+            weight = (p.r1.score + p.r2.score) / 2 # TODO: think this through
+            # this is a bit better than non-weighted avg.: TODO: experiments and pass the param from the cfg
+            self.weight_sum += weight 
             self.centroid += weight * p.point    
             # self.centroid += p.point
         
@@ -238,9 +252,9 @@ class FrameDetections:
     class_names: list
     class_ids: list
     scores: list
+    feature_vectors: T.List[np.ndarray] # semantic feature vectors
     global_instances: list=None # global instance labels -- ground truth corespondances
     coordinates: list=None # latitude, longitude coordinates -- ground truth gnss
-
 
 
 ## TODO: to eval/metrics/rays... ?

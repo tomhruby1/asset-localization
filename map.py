@@ -28,8 +28,8 @@ class MapVisualizer:
 
         self.app = Dash(__name__)
         self.app.layout = dl.Map([
-            dl.TileLayer(maxZoom=30),
-        ], center=map_center, zoom=zoom, maxZoom=30, style={'height': '50vh'})
+            dl.TileLayer(maxZoom=20),
+        ], center=map_center, zoom=zoom, maxZoom=20, style={'height': '50vh'})
 
         
         # load icons

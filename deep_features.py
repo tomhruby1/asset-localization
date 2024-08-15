@@ -7,19 +7,11 @@ from pathlib import Path
 from tqdm import tqdm
 import time
 import json
+import copy
 
 from data_structures import Ray, Point
 from traffic_signs_features.models import ResnetTiny
 from traffic_signs_features.inference import run_inference, get_prediction, run_batched_inference
-
-
-CHECKPOINT_P = R"D:\ass-loc\traffic_signs_features\model\ResnetTiny_epoch_28.pth"
-CLASSES_P = R"D:\ass-loc\traffic_signs_features\model\dataset_info.json"
-
-def get_id_to_label():
-    with open(CLASSES_P) as f:
-        classes_data = json.load(f)
-    return classes_data['id_to_label']
 
 
 # TODO: move to common
@@ -31,16 +23,11 @@ def get_frame_filename(sensor, frame_number, length=7, suffix='.jpg'):
         frame_id = '0' * (length - len(num_str)) + num_str
     return f"{sensor}_frame_{(frame_id)}.jpg"
 
-def get_deep_features(rays:T.List[Ray], debug=False):
+def get_deep_features(model, rays:T.List[Ray], debug=False):
     '''Returns vectors of cls_features and embeddings for each ray'''
     
     RESIZE_TO = (128,128)
     rotated_extracted_p = Path("/media/tomas/samQVO_4TB_D/drtinova_small_u_track/data_rotated")
-
-    model = ResnetTiny()
-    checkpoint = torch.load(CHECKPOINT_P)
-    model.load_state_dict(checkpoint['model_state_dict'])
-
 
     EMB_SIZE = 8192 # (128 x 128) --> 4 x 4 x 512
     embeddings = np.zeros([len(rays), EMB_SIZE])
@@ -70,17 +57,13 @@ def get_deep_features(rays:T.List[Ray], debug=False):
 
 
 # not that faster --probably the Image loading and cropping? 
-def get_deep_features_batched(rays:T.List[Ray], batch_size=64, softmax=True, num_classes=247, embeddings=False, debug=None,
+def get_deep_features_batched(model, rays:T.List[Ray], id_to_label, batch_size=64, softmax=True, num_classes=247, embeddings=False, debug=None,
                               data=Path("/media/tomas/samQVO_4TB_D/drtinova_small_u_track/data_rotated"), rotated=True):
 
     RESIZE_TO = (128,128)
     
-    debug = Path(debug) if Path(debug).exists() else None
- 
-    model = ResnetTiny(num_out_classes=num_classes)
-    checkpoint = torch.load(CHECKPOINT_P)
-    model.load_state_dict(checkpoint['model_state_dict'])
-
+    if debug is not None:
+        debug = Path(debug) if Path(debug).exists() else None
 
     EMB_SIZE = 8192 # (128 x 128) --> 4 x 4 x 512
     
@@ -133,17 +116,14 @@ def get_deep_features_batched(rays:T.List[Ray], batch_size=64, softmax=True, num
 
         # inference
         t_inference = time.monotonic()
-        cls_feat, emb_feat, labels = run_batched_inference(model, img_batch, RESIZE_TO, softmax_norm=softmax, pred_labels=True, classes_p=CLASSES_P)
+        cls_feat, emb_feat, labels = run_batched_inference(model, img_batch, RESIZE_TO, id_to_label, softmax_norm=softmax, pred_labels=True)
         stats['inference'] += time.monotonic() - t_inference
         cls_features[low_i:upp_i, :] = cls_feat.detach().cpu().numpy()
         if embeddings:
             embeddings[low_i:upp_i, :] = emb_feat.detach().cpu().numpy()
 
 
-        
-        
         if debug: 
-            id_to_label = get_id_to_label()
             for j, feat in enumerate(cls_feat):
                 lbl = id_to_label[torch.argmax(feat).item()] + f" {(torch.max(feat).item()):.2f}%"
                 draw = ImageDraw.Draw(img_batch[j])
@@ -154,7 +134,7 @@ def get_deep_features_batched(rays:T.List[Ray], batch_size=64, softmax=True, num
     return cls_features, embeddings, stats
 
 
-def genereate_deep_features_midpoints(midpoints:T.List[Point], out_p:Path,
+def genereate_deep_features_midpoints(midpoints:T.List[Point], out_p:Path, checkpoint_p:Path, id_to_label,
                                       batch_size=32, softmax=True, embedding_size=8192, num_classes=247,
                                       debug=None, return_labels=False, data_rotated=True,
                                       data_path="/media/tomas/samQVO_4TB_D/drtinova_small_u_track/data_rotated"):
@@ -167,7 +147,7 @@ def genereate_deep_features_midpoints(midpoints:T.List[Point], out_p:Path,
     data_p = Path(data_path)
 
     model = ResnetTiny(num_out_classes=num_classes)
-    checkpoint = torch.load(CHECKPOINT_P)
+    checkpoint = torch.load(checkpoint_p)
     model.load_state_dict(checkpoint['model_state_dict'])
     
     cls_features = np.zeros((2, len(midpoints), num_classes))  # cls_features stored (embeddings quite bigger)
@@ -180,7 +160,8 @@ def genereate_deep_features_midpoints(midpoints:T.List[Point], out_p:Path,
         else:
             debug_dir = None
 
-        feats, embeddings, stats = get_deep_features_batched(rays, batch_size=batch_size, softmax=softmax, num_classes=num_classes,
+        feats, embeddings, stats = get_deep_features_batched(model, rays, id_to_label, batch_size=batch_size, 
+                                                             softmax=softmax, num_classes=num_classes,
                                                              data=data_p, rotated=data_rotated, debug=debug_dir)
         cls_features[ridx,:,:] = feats
         
@@ -190,3 +171,77 @@ def genereate_deep_features_midpoints(midpoints:T.List[Point], out_p:Path,
         print(f"{ridx}/2 deep features generated, stats: \n{stats}")
 
     return cls_features
+
+
+
+
+
+
+def generate_deep_features_2(checkpoint_p:Path, detections_p:Path, data_p:Path, out_p:Path, id_to_label:list, 
+                           batch_size=32, resize_to=(128,128), debug=None) -> dict:
+    ''' Generate deep features directly for the detections. 
+        Dumb to iterate over midpoints. THIS WILL BE CALLED PRIOR TO RAYCASTING.
+        Will export dictionary mapping  img_name -> list of feature vectors
+        args:
+            - checkpoint_p: torch checkpoint
+            - detections_p: detections .json
+            - data_p: undistorted images
+
+    '''
+    data_p = Path(data_p)
+
+    num_classes = len(id_to_label)
+
+    model = ResnetTiny(num_out_classes=num_classes)
+    checkpoint = torch.load(checkpoint_p)
+    model.load_state_dict(checkpoint['model_state_dict'])
+
+    with open(detections_p) as f:
+        detections = json.load(f)
+    
+    for img_name in tqdm(detections):
+        sensor_name = img_name.split("_")[0]
+        if len(detections[img_name]) > 0:
+            img = Image.open(data_p/sensor_name/img_name)
+            img = img.rotate(90, expand=True) # TODO: handle other cases than MX
+            # TODO: implement larger batch_size over more than one image
+            img_batch = [img.crop((det['bbox'][0], 
+                                   det['bbox'][1], 
+                                   det['bbox'][0]+det['bbox'][2], 
+                                   det['bbox'][1]+det['bbox'][3])) for det in detections[img_name]]
+            cls_feat, emb_feat, labels = run_batched_inference(model, img_batch, resize_to, id_to_label, 
+                                                               softmax_norm=True, pred_labels=True)
+            for det, feat in zip(detections[img_name], cls_feat.detach().cpu().numpy().tolist()):
+                det['feature'] = feat
+            
+            if debug is not None:
+                # import io
+                # import matplotlib.pyplot as plt
+
+                debug = Path(debug)
+                debug.mkdir(exist_ok=True) 
+                for j, feat in enumerate(cls_feat):
+                    
+                    # plt.figure(figsize=(4, 1))
+                    # plt.plot(feat)
+                    # plot_buffer = io.BytesIO()
+                    # plt.savefig(plot_buffer, format='png')
+                    # plt.close()
+                    # plot_buffer.seek(0)
+                    # plot_image = Image.open(plot_buffer)
+                    
+                    lbl = id_to_label[torch.argmax(feat).item()] + f" {(torch.max(feat).item()):.2f}%"
+                    draw = ImageDraw.Draw(img_batch[j])
+                    position = (2, 2)
+                    draw.text(position, lbl, fill=(0, 255, 0))
+                    img_batch[j].save(f'{str(debug)}/{img_name}.d{j}.png')
+
+                    # new_image = Image.new('RGB', (img_batch[j].width, img_batch[j].height+plot_image.height))
+                    # new_image.paste(img_batch[j], (0, 0))
+                    # new_image.paste(plot_image, (0, img_batch[j].height))
+                    # new_image.save(f'{str(debug)}/{img_name}.d{j}.png')
+
+    with open(out_p, 'w') as f:
+        json.dump(detections, f)
+
+    return detections

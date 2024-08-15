@@ -97,7 +97,7 @@ class TrajectoryData:
     '''Data container for both the gpx GNSS/XVN data and detections'''
     
     def __init__(self, detections_p:Path, gpx_p:Path, calibration_p:Path, landmark_gnss_p:Path=None, 
-                 geo_coord_sys=None, geo_coord_sys_origin=None):
+                 geo_coord_sys=None, geo_coord_sys_origin=None, detections_features:dict=None):
         '''
         args:
             - detections_p: path to detections json file
@@ -105,6 +105,7 @@ class TrajectoryData:
             - calibration_p: path to calibration file
             - landmark_gnss_p: path to csv with ground truth landmarks
             - geo_coord_sys: coordinate system for the projected trajector
+            - detection_features: dictionary containing list of feature vectors for each image
         '''
         self.detections_p = Path(detections_p)
         self.gpx_p = Path(gpx_p)
@@ -136,6 +137,8 @@ class TrajectoryData:
                 }
             self.frame_image_map[frame_id][sensor] = img_name
 
+        self.detections_features = detections_features
+        
         # load landmark csv
         self.landmarks = None
         if landmark_gnss_p:
@@ -176,6 +179,7 @@ class TrajectoryData:
         class_names = [det['category_name'] for det in dets]
         class_ids = [det['category_id'] for det in dets]
         scores = [det['score'] for det in dets]
+        feats = [np.array(det['feature']) for det in dets]
 
         global_instances = None
         if len(dets) > 0:
@@ -189,7 +193,7 @@ class TrajectoryData:
             if 'latitude' in dets[0] and 'longitude' in dets[0]:
                 coords = [(det['latitude'], det['longitude']) for det in dets] # lat, long
 
-            return FrameDetections(bboxes, class_names, class_ids, scores, 
+            return FrameDetections(bboxes, class_names, class_ids, scores, feats,
                                    global_instances=global_instances, coordinates=coords) 
         else:
             print(f"No detections for {image_name}")

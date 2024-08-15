@@ -9,7 +9,7 @@ import yaml
 
 SENSORS = ['cam0', 'cam1', 'cam2', 'cam3', 'cam5']
 
-def get_midpoint(r1: T.Union[tuple, Ray], r2: T.Union[tuple, Ray], l=False) -> T.Tuple[np.ndarray, float]:
+def get_midpoint(r1: T.Union[tuple, Ray], r2: T.Union[tuple, Ray], l=False, dist_weight=True) -> T.Tuple[np.ndarray, float]:
     '''
         Get closest point (intersection hypothesis) for two rays 
         given starting point and direction.
@@ -17,6 +17,8 @@ def get_midpoint(r1: T.Union[tuple, Ray], r2: T.Union[tuple, Ray], l=False) -> T
         args: 
             - r1: ray or (p1, d1) tuple 
             - r2: ray or (p2, d2) tuple
+            - l: return lambda distance from origin to the midpoint
+            - dist_weight: if True the distance is weighted by the inverse distance along the rays: https://arxiv.org/abs/1907.11917
         
         returns:
             - midpoint
@@ -36,14 +38,25 @@ def get_midpoint(r1: T.Union[tuple, Ray], r2: T.Union[tuple, Ray], l=False) -> T
     n  = np.cross(d1,d2)
     n1 = np.cross(d1, n)
     n2 = np.cross(d2, n)
-    c1 = p1 + np.dot((p2-p1), n2) / (np.dot(d1, n2)) * d1 #closest p on l1
-    c2 = p2 + np.dot((p1-p2), n1) / (np.dot(d2, n1)) * d2 #closest p on l2
-    ray_dist = np.linalg.norm(c2-c1)
+    c1 = p1 + np.dot((p2-p1), n2) / (np.dot(d1, n2)) * d1 # closest p on l1
+    c2 = p2 + np.dot((p1-p2), n1) / (np.dot(d2, n1)) * d2 # closest p on l2
+    
 
-    if l:
-        return (c1 + c2)/2, ray_dist, np.dot((p2-p1), n2) / (np.dot(d1, n2)), np.dot((p1-p2), n1) / (np.dot(d2, n1))
+    
+    l1 = np.dot((p2-p1), n2) / (np.dot(d1, n2))
+    l2 = np.dot((p1-p2), n1) / (np.dot(d2, n1))
+
+    if dist_weight:
+        mp = (1/l1 * c1 + 1/l2 * c2) / (1/l1 + 1/l2)
+        ray_dist = np.linalg.norm(c2-c1) # I guess ???
     else:
-        return (c1 + c2)/2, ray_dist
+        mp = (c1 + c2)/2
+        ray_dist = np.linalg.norm(c2-c1)
+    
+    if l:
+        return mp, ray_dist, l1, l2
+    else:
+        return mp, ray_dist
 
 
 def load_calibration(calib_p:T.Union[str, Path], camtype='mx', return_chain=False):

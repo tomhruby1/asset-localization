@@ -13,7 +13,7 @@ from sklearn.metrics.pairwise import euclidean_distances, cosine_distances
 import config
 from clustering import clustering_bihierarchical, clustering_dbscan
 from rerun_visualization import visualize_trajectory, visualize_midpoint_clusters, init_visualization, visualize_rays, visualize_points, SOME_COLORS, visualize_ground_truth_landmarks
-from deep_features import genereate_deep_features_midpoints
+from deep_features import genereate_deep_features_midpoints, generate_deep_features_2
 from tools.undistort_images import undistort_imgs
 from tools.rotate_images import rotate_imgs
 from trajectory_data import TrajectoryData
@@ -23,6 +23,7 @@ from map import MapVisualizer
 
 UNDISTORTED_DIR = "reel_undistorted"
 ROTATED_DIR = "data_rotated"
+DETECTIONS_WITH_FEATURES = "detections2.json"
 
 # FILTERING VISUALIZATION COLORS 
 
@@ -85,6 +86,17 @@ class AssetLocalizationManager:
         self.detections_p = self.work_dir/'detections.json'
 
 
+        # TODO: move to a separate stage
+        with open(self.config.features.classes_info) as f:
+            classes_data = json.load(f)
+        self.id_to_label = classes_data['id_to_label']
+        if not (self.work_dir/DETECTIONS_WITH_FEATURES).exists():
+            self.deep_features = generate_deep_features_2(self.config.features.checkpoint, self.detections_p, self.work_dir/UNDISTORTED_DIR, 
+                                    self.work_dir/DETECTIONS_WITH_FEATURES, self.id_to_label, debug=self.work_dir/'features2_debug')
+        else:
+            with open(self.work_dir/DETECTIONS_WITH_FEATURES) as f:
+                self.deep_features = json.load(f)
+
     def raycasting(self, cfg:config.Raycasting):
         # in: undistorted_reel_frames, detection
         # out: raycasting_result
@@ -95,8 +107,10 @@ class AssetLocalizationManager:
 
         camera_poses, self.coordsys_origin = raycasting.get_camera_transforms(cfg.camera_poses, cfg.process_sensors)
 
-        self.traj = TrajectoryData(self.detections_p, gpx_p, calib_p, landmark_gnss_p=self.config.evaluation.ground_truth_landmarks, 
-                                   geo_coord_sys_origin=self.coordsys_origin)
+        self.traj = TrajectoryData(self.work_dir/'detections2.json', gpx_p, calib_p, landmark_gnss_p=self.config.evaluation.ground_truth_landmarks, 
+                                   geo_coord_sys_origin=self.coordsys_origin, detections_features=self.deep_features)
+        with open(self.work_dir/'trajectory_data.pickle', 'wb') as f:
+            pickle.dump(self.traj, f)
         
         visualize_ground_truth_landmarks(self.traj.landmarks)
 
@@ -117,16 +131,20 @@ class AssetLocalizationManager:
         if self.config.visualization.visualize_trajectory:
             visualize_trajectory(self.traj)
         if self.config.visualization.visualize_rays:
-            visualize_rays(self.raycasting_result.rays)
+            rays_to_vis = [r for r in self.raycasting_result.rays 
+                           if self.id_to_label[np.argmax(r.cls_feature)] == 'A12']
+            visualize_rays(rays_to_vis)
         
         print("raycasting done")
 
     
     def prefiltering(self, cfg:config.Prefiltering):
+        MAX_RAYS_DIST = 2 # TODO: somwhere else
         self.points_prefiltered = [p for (i,p) in enumerate(self.points) 
                                    if (p.l[0]+p.l[1])/2 < cfg.mean_dist_from_cam
                                    and p.l[0] < cfg.max_dist_from_cam and p.l[1] < cfg.max_dist_from_cam
-                                   and np.min((p.r1.score, p.r2.score)) > cfg.min_score]
+                                   and np.min((p.r1.score, p.r2.score)) > cfg.min_score #]
+                                   and p.dist < MAX_RAYS_DIST]
         self.points = self.points_prefiltered
                 
         print(f"pre-filtered: {len(self.points)} / {len(self.raycasting_result.points)}")
@@ -134,33 +152,37 @@ class AssetLocalizationManager:
         visualize_points(self.points, entity="world/prefiltered", color=SOME_COLORS[0])
     
     def features(self, cfg:config.Features):
-        
-        with open(cfg.classes_info) as f:
-            classes_data = json.load(f)
-        self.id_to_label = classes_data['id_to_label']
+        # with open(cfg.classes_info) as f:
+        #     classes_data = json.load(f)
+        # self.id_to_label = classes_data['id_to_label']
 
-        DEBUG_DIR = "features_debug"
+        # DEBUG_DIR = "features_debug"
 
-        if (self.work_dir/'features.npy').exists():
-            print("features already computed, loading existing...")
-            cls_features = np.load(self.work_dir/'features.npy')
-        else:
-            debug = None
-            if cfg.debug:
-                debug = self.work_dir/DEBUG_DIR
+        # if (self.work_dir/'features.npy').exists():
+        #     print("features already computed, loading existing...")
+        #     cls_features = np.load(self.work_dir/'features.npy')
+        # else:
+        #     debug = None
+        #     if cfg.debug:
+        #         debug = self.work_dir/DEBUG_DIR
                 
-            cls_features = genereate_deep_features_midpoints(self.points, self.work_dir, cfg.checkpoint, self.id_to_label, debug=debug, 
-                                                             softmax=cfg.softmax, num_classes=len(self.id_to_label), return_labels=True, 
-                                                             data_path=self.work_dir/UNDISTORTED_DIR, data_rotated=False, batch_size=160)
+        #     cls_features = genereate_deep_features_midpoints(self.points, self.work_dir, cfg.checkpoint, self.id_to_label, debug=debug, 
+        #                                                      softmax=cfg.softmax, num_classes=len(self.id_to_label), return_labels=True, 
+        #                                                      data_path=self.work_dir/UNDISTORTED_DIR, data_rotated=False, batch_size=160)
             
-            with open(self.work_dir/'features.npy', 'wb') as f:
-                np.save(f, cls_features)
+        #     with open(self.work_dir/'features.npy', 'wb') as f:
+        #         np.save(f, cls_features)
 
-        self.semantic_features = cls_features[0] * cls_features[1]
+        # self.semantic_features = cls_features[0] * cls_features[1] # p[i].r1 * p[i].r2
         
-        # assign the cls_features
+        # assign the cls_features # TODO: move totally elsewhere 
         for i,p in enumerate(self.points):
-            p.cls_feature = self.semantic_features[i]
+            p.cls_feature = np.asarray(p.r1.cls_feature) * np.asarray(p.r2.cls_feature) #self.semantic_features[i]
+            # if np.any(self.semantic_features[i] != p.cls_feature):
+            #     print(self.semantic_features[i])
+            #     print("x")
+            #     print(p.cls_feature)
+            #     print()
             p.id = i # assign id to non-filtered point --so the cls_features matrices kept
             p.cls_feature_label = self.id_to_label[np.argmax(p.cls_feature)] 
 
@@ -175,9 +197,27 @@ class AssetLocalizationManager:
         print("FILTERING")
         # semantic filter
         self.points_filtered = [p for (i,p) in enumerate(self.points) 
-                                if np.max(self.semantic_features[i]) > cfg.product_feature_max_t]
+                                if np.max(p.cls_feature) > cfg.product_feature_max_t]
         print(f"semantically filtered: {len(self.points_filtered)} / {len(self.raycasting_result.points)}")
         visualize_points(self.raycasting_result.points, entity="world/semantically_filtered", color=SOME_COLORS[1])
+
+        # filter those too close to camera --> on the road
+        # TODO: this distance search is super inefective
+        DIST_TO_CAM_THRESHOLD = 0.8 # [m]
+        traj_xy, traj_hpr = self.traj.get_trajectory()
+        points_filtered = []
+        for idx, p in enumerate(self.points_filtered):
+            too_close = False
+            for xy in traj_xy:
+                d = np.linalg.norm(p.point[:2] - xy)
+                if d < DIST_TO_CAM_THRESHOLD:
+                   too_close = True
+                   break
+            if not too_close: # keep only of not too close to any trajecotry point
+                points_filtered.append(p)
+        self.points_filtered = points_filtered
+        print(f"too close to track filtered: {len(self.points_filtered)} / {len(self.raycasting_result.points)}")
+
         # point.id --> point filtered index map 
         pid_2_filt_idx = {p.id: i for i,p in enumerate(self.points_filtered)}
 
@@ -258,9 +298,40 @@ class AssetLocalizationManager:
         with open(self.work_dir/"config_used.toml", 'w') as f:
             toml.dump(self.config_dict, f)
 
+        
+        # # filter clusters too close to any camera trajectory pose -- def. faster then with points
+        # DIST_TO_CAM_THRESHOLD = 0.5
+        # traj_xy, traj_hpr = self.traj.get_trajectory()
+        # cluster_dist_to_closest_traj_point = []
+        # clusters_filtered = []
+        # for cidx, c in enumerate(self.clusters):
+        #     for xy in traj_xy:
+        #         d = np.linalg.norm(c.centroid[:2] - xy)
+        #         cluster_dist_to_closest_traj_point.append(d)
+        #         if d < DIST_TO_CAM_THRESHOLD:
+        #             print(f"cluster {cidx} too close to camera trajectory")
+        #         else:
+        #             clusters_filtered.append(c)
+        # self.clusters = clusters_filtered
+        # # TODO: seems ok, make it into the map
+
+        if self.config.visualization.visualize_clusters:
+            visualize_midpoint_clusters(self.clusters, 
+                                        show_centroids=self.config.visualization.visualize_cluster_centroids)
+            
+        cluster_data_export_dir = self.work_dir/'cluster_data'
+        import shutil
+        try:
+            shutil.rmtree(cluster_data_export_dir)
+        except Exception as ex:
+            print(ex)
+        cluster_data_export_dir.mkdir()
+        for i, cluster in enumerate(self.clusters):
+            cluster.export((cluster_data_export_dir/f"cluster_{i}.json"))
+
     def evaluation(self, cfg:config.Evaluation):
-        dist_threshold = 1.0 # target in meters
-        dist_max_threshold = 3.0
+        dist_threshold = 1 # target in meters
+        dist_max_threshold = 2.5
 
         pp, fn, matches = fuzzy_PP(self.clusters, self.traj.landmarks, 
                                    t=dist_threshold, t_max=dist_max_threshold, planar=True)
@@ -274,7 +345,7 @@ class AssetLocalizationManager:
 
 
         print(f"precision: {precision}, recall: {recall}")
-
+        print()
         # matches = {l:None for l in self.traj.landmarks}
         # unnassigned_clusters = copy.deepcopy(self.clusters)
         

@@ -1,10 +1,12 @@
 from pathlib import Path
 import typing as T
+import copy
 
 import numpy as np
 import cv2
 import rerun as rr
 from scipy.spatial.transform import Rotation
+from tqdm import tqdm
 
 from data_structures import Ray, Point, RaycastingResult
 import config
@@ -18,7 +20,14 @@ R_to_opencv[1,1] = -1
 R_to_opencv[2,2] = -1
 
 def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Path, traj:TrajectoryData):
-    ''' Perform raycasting + visualization of camera frames / detections'''
+    ''' Perform raycasting + visualization of camera frames / detections given set of fixed camera transforms - 4x4 matrices
+
+        args:
+            - cfg: raycasting config
+            - cameara_transforms: camera 4x4 pose transform matrices
+            - extracted_frames_p: path to (presumably undistorted) data
+            - traj: Trajectory Data (containing feature vectors for each of the detection in each image frame)
+    '''
 
     # load data
     # traj = TrajectoryData(detections_p, gpx_p, calib_p)
@@ -83,19 +92,13 @@ def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Pa
                     res[0] - (y+h), x, h, w # rotating the bounding boxes 90-deg clockwise
                 ])
             dets.bboxes = bboxes_rot
+        else: continue
 
         # no visualization for now
         # if UNDISTORT and VIS_IMAGES:
         #     img = undistort_img(img, undistort_map, sensor)
 
-        # img = np.rot90(img) # TODO: true only for MX I think -- then another T_rotate_90 needs to be added to the transform chain
 
-        T_gnss_world = traj.get_gnss_T(frame_id)
-        T_camn_cam0 = traj.get_sensor_T(sensor)
-
-        K, d, principal_point, focal_length = traj.get_sensor_intrinsics(sensor)
-        K, d, principal_point, focal_length = traj.get_sensor_intrinsics(sensor)
-        res = (4096, 3008) #(3008, 4096)  # depends on whether rotated 90 
         K, d, principal_point, focal_length = traj.get_sensor_intrinsics(sensor) 
         res = (4096, 3008) #(3008, 4096)  # depends on whether rotated 90 
  
@@ -126,7 +129,6 @@ def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Pa
                                                        labels=dets.class_names
                                                     ))
         # RAYCASTING
-        if dets is None: continue
         # OPENCV undistort and get point in 3D coords relative to the camera
         x_det_dist = np.asarray([get_coco_center(bbox) for bbox in dets.bboxes])
         if len(x_det_dist) > 0:
@@ -163,6 +165,8 @@ def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Pa
                 else:
                     ray = Ray(ray_id, frame_id, sensor, dets.class_ids[i], dets.class_names[i], dets.scores[i], 
                               dets.bboxes[i], ray_origin, ray_dir, global_instance=dets.global_instances[i])                    
+                ray.cls_feature = dets.feature_vectors[i]
+                
                 ray_id += 1   
                 rays.append(ray)
                 all_rays.append(ray)
@@ -172,12 +176,14 @@ def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Pa
 
             frame_rays[frame_id] = rays
             frame_ray_labels[frame_id] = ray_labels
-
+    print(f"Ray projecting finished; {len(all_rays)} rays created")
+    
+    print("Building midpoints...")
     ## Midpoint stuff
     midpoints:T.List[Point] = []
-    for i, ray1 in enumerate(all_rays):
+    for i, ray1 in enumerate(tqdm(all_rays)):
         for j, ray2 in enumerate(all_rays):
-            if i != j and ray1.frame_id != ray2.frame_id:
+            if i != j and ray1.frame_id != ray2.frame_id: 
                 midpoint, dist, l1, l2 = get_midpoint(ray1, ray2, l=True)
                 if l1 > 0 and l2 > 0:
                     midpoints.append(Point(ray1, ray2, dist, midpoint, (l1,l2)))
