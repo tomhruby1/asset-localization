@@ -8,6 +8,7 @@ from tqdm import tqdm
 import time
 import json
 import copy
+import pickle
 
 from data_structures import Ray, Point
 from traffic_signs_features.models import ResnetTiny
@@ -230,11 +231,24 @@ def generate_deep_features_2(checkpoint_p:Path, detections_p:Path, data_p:Path, 
                     # plot_buffer.seek(0)
                     # plot_image = Image.open(plot_buffer)
                     
-                    lbl = id_to_label[torch.argmax(feat).item()] + f" {(torch.max(feat).item()):.2f}%"
-                    draw = ImageDraw.Draw(img_batch[j])
+                    DEBUG_THUMBNAIL_SIZE = (128,128)
+
+                    lbl = id_to_label[torch.argmax(feat).item()] + f" {(torch.max(feat).item()*100):.1f}%"
+                    img = img_batch[j]
+                    img.thumbnail(DEBUG_THUMBNAIL_SIZE)
+                    
+                    fixed_sized_img = Image.new("RGB", DEBUG_THUMBNAIL_SIZE, (255, 255, 255))
+                    fixed_sized_img.paste(img, ((DEBUG_THUMBNAIL_SIZE[0] - img.size[0]) // 2,
+                                                (DEBUG_THUMBNAIL_SIZE[1] - img.size[1]) // 2))
+                    
+                    draw = ImageDraw.Draw(fixed_sized_img)
                     position = (2, 2)
-                    draw.text(position, lbl, fill=(0, 255, 0))
-                    img_batch[j].save(f'{str(debug)}/{img_name}.d{j}.png')
+                    draw.text(position, lbl, fill=(0, 0, 0))
+                    name = f"{str(debug)}/{img_name}.d{j}"
+                    fixed_sized_img.save(f"{name}.png")
+
+                    with open(f"{name}.feature", 'wb') as f:
+                        pickle.dump(feat.detach().cpu().numpy().tolist(), f)
 
                     # new_image = Image.new('RGB', (img_batch[j].width, img_batch[j].height+plot_image.height))
                     # new_image.paste(img_batch[j], (0, 0))
