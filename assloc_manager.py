@@ -131,8 +131,8 @@ class AssetLocalizationManager:
         if self.config.visualization.visualize_trajectory:
             visualize_trajectory(self.traj)
         if self.config.visualization.visualize_rays:
-            rays_to_vis = [r for r in self.raycasting_result.rays 
-                           if self.id_to_label[np.argmax(r.cls_feature)] == 'A12']
+            rays_to_vis = [r for r in self.raycasting_result.rays ]
+                        #    if self.id_to_label[np.argmax(r.cls_feature)] == 'A12']
             visualize_rays(rays_to_vis)
         
         print("raycasting done")
@@ -250,10 +250,12 @@ class AssetLocalizationManager:
         for ray_id in ray_points:
             neighborhood_magnitude = [0] * len(ray_points[ray_id]) 
             for i, dp in enumerate(ray_points[ray_id]):
-                # for each point p along the ray get the number of points in the epsilon neighborhood = nbr_mag(p)
+                # for each point p (at dist d) along the ray get the number of points in the epsilon neighborhood = nbr_mag(p)
                 d, p = dp
                 close_points_ids = np.where(self.dist_spatial[pid_2_filt_idx[p.id],:] < cfg.ray_epsilon_neighborhood)[0]
-                neighborhood_magnitude[i] = len(close_points_ids)
+                # neighborhood_magnitude[i] = len(close_points_ids) # magnitude by number of points closer than eps
+                neighborhood_magnitude[i] = p.r1.score * p.r2.score * sum([(self.points_filtered[id].r1.score*self.points_filtered[id].r2.score)
+                                                                           for id in close_points_ids]) # magnitude weighted by points score
                 
             ray_neighborhood_magnitude[ray_id] = neighborhood_magnitude
 
@@ -281,7 +283,8 @@ class AssetLocalizationManager:
     def clustering(self, cfg:config.Clustering):
         print("CLUSTERING")
         if 'dbscan' in self.config_dict['CLUSTERING']:
-            self.clusters, _ = clustering_dbscan(self.dist_spatial, cfg.minPts, cfg.eps, self.points_filtered, semantic_cluster_splitting=cfg.semantic_cluster_splitting)
+            self.clusters, _ = clustering_dbscan(self.dist_spatial, cfg.minPts, cfg.eps, self.points_filtered, self.id_to_label,
+                                                 semantic_cluster_splitting=cfg.semantic_cluster_splitting)
         elif 'bihierchical' in self.config_dict['CLUSTERING']:
             # TODO: ommit ray stuff here -- the above filtering enough
             self.clusters, stats = clustering_bihierarchical(self.dist_spatial, self.dist_semantic, self.points_filtered, self.raycasting_result.rays)
@@ -331,7 +334,7 @@ class AssetLocalizationManager:
 
     def evaluation(self, cfg:config.Evaluation):
         dist_threshold = 1 # target in meters
-        dist_max_threshold = 2.5
+        dist_max_threshold = 3
 
         pp, fn, matches = fuzzy_PP(self.clusters, self.traj.landmarks, 
                                    t=dist_threshold, t_max=dist_max_threshold, planar=True)
@@ -345,6 +348,16 @@ class AssetLocalizationManager:
 
 
         print(f"precision: {precision}, recall: {recall}")
+
+        with open(self.work_dir/'eval.json', 'w') as f:
+            json.dump({
+                "PP": pp,
+                "FN": fn,
+                "matches": matches,
+                "pprecision": precision,
+                "precall": recall
+            },f, indent=4)
+
         print()
         # matches = {l:None for l in self.traj.landmarks}
         # unnassigned_clusters = copy.deepcopy(self.clusters)
@@ -387,12 +400,16 @@ class AssetLocalizationManager:
         
         map.add_ground_truth(self.traj.landmarks, utm_zone=cfg.utm_zone, 
                              coord_sys_translation=self.coordsys_origin)
+        
+        traj_xy, traj_hpr = self.traj.get_trajectory()
+        traj_xy = [xy + self.coordsys_origin[:2] for xy in traj_xy]
+        map.add_trajectory(traj_xy)
         map.show()   
 
         print(f"done") 
 
 if __name__== "__main__":
     # config_path = Path(sys.argv[1])
-    config_path = 'config/latest.toml'
+    config_path = 'config/latest_arbes.toml'
     assloc = AssetLocalizationManager(config_path)
     assloc.run()

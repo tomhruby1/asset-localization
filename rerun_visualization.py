@@ -133,7 +133,7 @@ def visualize_rays(rays:T.List[Ray], ids:T.List[int]=None, descriptions:T.List[s
         rr.log(tag, rr.Arrows3D(origins=origins, 
                                 vectors=vectors,
                                 class_ids=ids_filtered,
-                                labels=descriptions_filtered,
+                                labels=None,
                                 colors=colors
                                 ))
         

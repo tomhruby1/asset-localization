@@ -120,11 +120,16 @@ class MapVisualizer:
 
         self.app.layout.children.append(dl.LayerGroup(markers))
 
+    def add_trajectory(self, trajectory: T.List[T.Tuple[float, float]], utm_zone=33, coord_sys_translation=(0,0)):
+        trajectory = [utm_to_latlon(p[0], p[1], utm_zone) for p in trajectory]
+        traj_polyline = dl.Polyline(positions=trajectory, color="green", weight=5)
+        self.app.layout.children.append(dl.LayerGroup(traj_polyline))
+
     def show(self):
         self.app.run_server()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  
     import dash_leaflet as dl
     from dash import Dash
     import base64

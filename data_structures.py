@@ -118,14 +118,16 @@ class Cluster:
     centroid: np.ndarray = None
     weight_sum = None
     feature_purity = None
+    class_id_to_label = None
 
-    def __init__(self, points:T.List[Point], id=int):
+    def __init__(self, points:T.List[Point], id=int, class_id_to_label:T.List[str]=None):
         self.id = id
         self.points = points
         self.rays = []
         for p in self.points:
             self.rays.append(p.r1)
             self.rays.append(p.r2)
+        self.class_id_to_label = class_id_to_label
 
         self.category_centroid_vote()
         self.calc_embedding_purity()
@@ -192,24 +194,32 @@ class Cluster:
         '''do a voting to select the most fitting class label for this cluster'''
 
         # here it would be definitely cleaner if classified based on the same features as with which clustering is done
-        score_class = {cls_name:0 for cls_name in SIGNS_CATEGORY_NAMES}
+        score_class = {cls_name:0 for cls_name in self.class_id_to_label}
         self.weight_sum = 0
         self.centroid = np.array([0.0,0.0,0.0]) # also get the mean while at this I guess
         self.categories = []
 
-        for p in self.points:
-            self.categories.append((p.r1.class_name, p.r2.class_name)) # debug
+        # for p in self.points:
+        #     self.categories.append((p.r1.class_name, p.r2.class_name)) # debug
 
-            score_class[p.r1.class_name] += p.r1.score
-            score_class[p.r2.class_name] += p.r2.score
-            weight = (p.r1.score + p.r2.score) / 2 # TODO: think this through
-            # this is a bit better than non-weighted avg.: TODO: experiments and pass the param from the cfg
-            self.weight_sum += weight 
-            self.centroid += weight * p.point    
-            # self.centroid += p.point
+        #     score_class[p.r1.class_name] += p.r1.score
+        #     score_class[p.r2.class_name] += p.r2.score
+        #     weight = (p.r1.score + p.r2.score) / 2 # TODO: think this through
+        #     # this is a bit better than non-weighted avg.: TODO: experiments and pass the param from the cfg
+        #     self.weight_sum += weight 
+        #     self.centroid += weight * p.point    
+        #     # self.centroid += p.point
         
+        # self.centroid /= self.weight_sum
+        # # self.centroid /= len(self.points)
+
+        # hypotheses expected to be pure by now --> ignoring rays?
+        for p in self.points:
+            p_score = p.r1.score * p.r2.score # or (p.r1.score + p.r2.score) / 2 ??
+            score_class[p.cls_feature_label] += p_score
+            self.weight_sum += p_score
+            self.centroid += p_score * p.point
         self.centroid /= self.weight_sum
-        # self.centroid /= len(self.points)
         
         best_label_id = np.argmax(list(score_class.values()))
         best_class_label = list(score_class.keys())[best_label_id]

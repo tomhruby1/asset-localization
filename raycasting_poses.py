@@ -56,7 +56,6 @@ def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Pa
                                 vectors=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
                                 colors=[[255, 0, 0], [0, 255, 0], [0, 0, 255]],
                             )
-    
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP)
     rr.log("world", COORD_ARROW)
 

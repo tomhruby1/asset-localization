@@ -5,12 +5,13 @@ from sklearn.cluster import DBSCAN
 
 from data_structures import Ray, Point, Cluster
 
-def clustering_dbscan(dist_spatial, min_samples, eps, points_filtered, semantic_cluster_splitting=True) -> T.Tuple[T.List[Cluster], dict]:
+def clustering_dbscan(dist_spatial, min_samples, eps, points_filtered, class_id_to_label, semantic_cluster_splitting=True) -> T.Tuple[T.List[Cluster], dict]:
     ''' Run sklearn DBSCAN implementation. Expected (euclidean?) distance matrix
 
         args:
             - dist_spatial, dist_semantic: distance matrices
             - points_filtered: midpoint hypotheses
+            - classs_id_to_label: list of class labels (id to label list)  # TODO probably access elsewhere, global???
     '''
     cluster_model = DBSCAN(min_samples=min_samples, eps=eps, metric='precomputed')
     cluster_model.fit(dist_spatial)
@@ -39,13 +40,13 @@ def clustering_dbscan(dist_spatial, min_samples, eps, points_filtered, semantic_
             for cls, points in cluster_split.items():
                 # use the same minimum points pts param as DBSCAN uses 
                 if len(points) > min_samples:
-                    midpoint_clusters.append(Cluster(points, len(midpoint_clusters)))
+                    midpoint_clusters.append(Cluster(points, len(midpoint_clusters), class_id_to_label=class_id_to_label))
             # B) based on detector?
 
     return midpoint_clusters, {} # no stats.. TODO
 
     
-def clustering_bihierarchical(dist_spatial:np.ndarray, dist_semantic:np.ndarray, points_filtered:T.List[Point], rays:T.List[Ray],
+def clustering_bihierarchical(dist_spatial:np.ndarray, dist_semantic:np.ndarray, points_filtered:T.List[Point], rays:T.List[Ray], class_id_to_label,
                               spat_t=5, sema_t=0.28, alpha=0.4, metric='min', ray_connection_pruning=False)  -> T.Tuple[T.List[Cluster], dict]:
     ''' Run custom hierarchical bi-modal clustering
 
@@ -87,7 +88,7 @@ def clustering_bihierarchical(dist_spatial:np.ndarray, dist_semantic:np.ndarray,
     midpoint_clusters = [None] * len(clusters)
     for i, cl_elements in enumerate(clusters): 
         cl_points = [points_filtered[el] for el in cl_elements]
-        midpoint_clusters[i] = Cluster(cl_points, i)
+        midpoint_clusters[i] = Cluster(cl_points, i, class_id_to_label=class_id_to_label)
 
 
     return midpoint_clusters, stats
