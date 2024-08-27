@@ -121,9 +121,9 @@ def visualize_rays(rays:T.List[Ray], ids:T.List[int]=None, descriptions:T.List[s
             vectors[i] = r.direction * arrow_scale
 
         if descriptions is None:
-            # descriptions_filtered = [f"{r.frame_id}/{r.sensor}-->{r.global_instance}" if r.global_instance is not None else
-            #                          f"{r.frame_id}/{r.sensor}-->{r.class_name}[{r.score:.2f}]" for r in rays_filtered ]
-            descriptions_filtered = [str(r) for r in rays_filtered]
+            descriptions_filtered = [f"{r.frame_id}/{r.sensor}-->{r.global_instance}" if r.global_instance is not None else
+                                     f"{r.frame_id}/{r.sensor}-({r.id})->{r.class_name}[{r.score:.2f}]" for r in rays_filtered ]
+            # descriptions_filtered = [str(r) for r in rays_filtered]
 
         tag = "world/rays/"
         if extra_tag:
@@ -133,7 +133,7 @@ def visualize_rays(rays:T.List[Ray], ids:T.List[int]=None, descriptions:T.List[s
         rr.log(tag, rr.Arrows3D(origins=origins, 
                                 vectors=vectors,
                                 class_ids=ids_filtered,
-                                labels=None,
+                                labels=descriptions_filtered,
                                 colors=colors
                                 ))
         

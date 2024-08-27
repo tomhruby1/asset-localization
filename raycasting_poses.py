@@ -73,7 +73,7 @@ def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Pa
         if cfg.every_nth:
             if frame_id not in frames_to_vis: continue
         if cfg.frames != 'all':
-            print(frame_id)
+            # print(frame_id)
             if frame_id not in cfg.frames and int(frame_id) not in cfg.frames:
                 continue
 
@@ -183,7 +183,7 @@ def raycast(cfg:config.Raycasting, camera_transforms:dict, extracted_frames_p:Pa
     for i, ray1 in enumerate(tqdm(all_rays)):
         for j, ray2 in enumerate(all_rays):
             if i != j and ray1.frame_id != ray2.frame_id: 
-                midpoint, dist, l1, l2 = get_midpoint(ray1, ray2, l=True)
+                midpoint, dist, l1, l2 = get_midpoint(ray1, ray2, l=True, dist_weight=False)
                 if l1 > 0 and l2 > 0:
                     midpoints.append(Point(ray1, ray2, dist, midpoint, (l1,l2)))
 

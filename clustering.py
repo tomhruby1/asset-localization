@@ -47,7 +47,7 @@ def clustering_dbscan(dist_spatial, min_samples, eps, points_filtered, class_id_
 
     
 def clustering_bihierarchical(dist_spatial:np.ndarray, dist_semantic:np.ndarray, points_filtered:T.List[Point], rays:T.List[Ray], class_id_to_label,
-                              spat_t=5, sema_t=0.28, alpha=0.4, metric='min', ray_connection_pruning=False)  -> T.Tuple[T.List[Cluster], dict]:
+                              spat_t=5, sema_t=0.28, alpha=0.4, metric='max', min_pts=3, ray_connection_pruning=False)  -> T.Tuple[T.List[Cluster], dict]:
     ''' Run custom hierarchical bi-modal clustering
 
         args:
@@ -85,10 +85,14 @@ def clustering_bihierarchical(dist_spatial:np.ndarray, dist_semantic:np.ndarray,
     print("bi-modal hierarchical clustering done")
 
     ## build the clusters
-    midpoint_clusters = [None] * len(clusters)
-    for i, cl_elements in enumerate(clusters): 
+    midpoint_clusters = []
+    for i, cl_elements in enumerate(clusters):     
         cl_points = [points_filtered[el] for el in cl_elements]
-        midpoint_clusters[i] = Cluster(cl_points, i, class_id_to_label=class_id_to_label)
-
+        if len(cl_points) >= min_pts:
+            midpoint_clusters.append(Cluster(cl_points, i, class_id_to_label=class_id_to_label))
+        else:
+            if 'too_little_points' not in stats:
+                stats['too_little_points'] = 0
+            stats['too_little_points'] += 1
 
     return midpoint_clusters, stats

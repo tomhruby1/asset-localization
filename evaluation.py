@@ -2,7 +2,7 @@ import copy
 
 import numpy as np
 
-def fuzzy_PP(clusters, landmarks, t=1, t_max=3, planar=True):
+def fuzzy_PP(clusters, landmarks, t=1, t_max=3, planar=True, debug=False):
     ''' 
     Calculate the fuzzy 'pure' positives for a cluster of means and a set of ground truth landmarks.
 
@@ -45,12 +45,12 @@ def fuzzy_PP(clusters, landmarks, t=1, t_max=3, planar=True):
                     d = cluster_dists[cl_idx]
                     pp = 1.0 if cluster_dists[cl_idx] < t else -1.0*d / (t_max - t) + t_max / (t_max - t)
                     PP_val += pp
-                    print(f"PP for landmark {l_id}: {pp}")
+                    if debug: print(f"PP for landmark {l_id}: {pp}")
                 else:
-                    print(f"multiple clusters of the same class within threshold for landmark {l_id}")
+                    if debug: print(f"multiple clusters of the same class within threshold for landmark {l_id}")
         
         if matches[l_id] is None:
-            print(f"no match for landmark {l_id}")
+            if debug: print(f"no match for landmark {l_id}")
             FN_val += 1
 
     return PP_val, FN_val, matches

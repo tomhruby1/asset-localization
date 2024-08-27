@@ -276,24 +276,26 @@ class TrajectoryData:
         if ax:  ax.set_aspect('equal', adjustable='box')
         xs = []; ys=[]; hs=[]; ps=[]; rs=[]
 
+        if ax: ax.grid(visible=True)
+
         for idx, row in self.gpx_df.iterrows():
             xs.append(row.x)
             ys.append(row.y)
             hs.append(float(row.Heading))
             ps.append(float(row.Pitch))
             rs.append(float(row.Roll))
-        if ax: ax.scatter(xs, ys)
+        if ax: ax.scatter(xs, ys, color='green', alpha=0.3)
         for xi, yi, heading in zip(xs, ys, hs):
-            heading = float(heading)
+            heading = float(heading) + 180 # switch to opposite direction # datasets used with XVN mounted the opposite
             arrow_length = 0.2
             arrow_dx = arrow_length * np.sin(np.radians(heading))
             arrow_dy = arrow_length * np.cos(np.radians(heading))
-            if ax: ax.arrow(xi, yi, arrow_dx, arrow_dy, head_width=0.05, head_length=0.1, fc='red', ec='red')
+            if ax: ax.arrow(xi, yi, arrow_dx, arrow_dy, head_width=0.05, head_length=0.1, fc='green', ec='green')
         
         if ax:
             ax.set_xlabel("x (easting)")
             ax.set_ylabel("y (northing)")
-            ax.set_title("XVN pose - x,y,heading")
+            # ax.set_title("XVN pose - x,y,heading")
 
         # also save the processed trajectory to data structure # TODO: probably do always
         traj_xy = np.array([xs, ys]).T

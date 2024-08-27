@@ -133,7 +133,7 @@ class Cluster:
         self.calc_embedding_purity()
         
     def __str__(self, details=False):
-        label = f"cluster-{self.id}"
+        label = f"cluster-{self.id}|of {len(self.points)}pts"
         if self.category is not None:
             label += f"|cat:{self.category}"
         # if self.feature_purity:

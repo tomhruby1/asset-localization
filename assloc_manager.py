@@ -133,7 +133,7 @@ class AssetLocalizationManager:
         if self.config.visualization.visualize_rays:
             rays_to_vis = [r for r in self.raycasting_result.rays ]
                         #    if self.id_to_label[np.argmax(r.cls_feature)] == 'A12']
-            visualize_rays(rays_to_vis)
+            visualize_rays(rays_to_vis, category=['A12'])
         
         print("raycasting done")
 
@@ -287,7 +287,9 @@ class AssetLocalizationManager:
                                                  semantic_cluster_splitting=cfg.semantic_cluster_splitting)
         elif 'bihierchical' in self.config_dict['CLUSTERING']:
             # TODO: ommit ray stuff here -- the above filtering enough
-            self.clusters, stats = clustering_bihierarchical(self.dist_spatial, self.dist_semantic, self.points_filtered, self.raycasting_result.rays)
+            self.clusters, stats = clustering_bihierarchical(self.dist_spatial, self.dist_semantic, self.points_filtered, 
+                                                             self.raycasting_result.rays, self.id_to_label,
+                                                             spat_t=cfg.t1, sema_t=cfg.t2, alpha=cfg.alpha, min_pts=cfg.minPts, metric='max')
         else:
             raise Exception(f"Uknown clustering method: {self.config_dict['CLUSTERING']}")
         
@@ -333,23 +335,39 @@ class AssetLocalizationManager:
             cluster.export((cluster_data_export_dir/f"cluster_{i}.json"))
 
     def evaluation(self, cfg:config.Evaluation):
-        dist_threshold = 1 # target in meters
-        dist_max_threshold = 3
-
-        pp, fn, matches = fuzzy_PP(self.clusters, self.traj.landmarks, 
-                                   t=dist_threshold, t_max=dist_max_threshold, planar=True)
         print(50*"-")
-        print(f"PP: {pp}/{len(self.traj.landmarks)}")
-        print(f"FN: {fn}/{len(self.traj.landmarks)}")
+        print("EVALUATION")
+        print(50*"-")
+        print(f"{self.config.prefiltering}")
+        print(f"{self.config.filtering}")
+        print(f"{self.config.clustering}") 
+        print("-"*30)
 
-        
+        pp, fn, matches = fuzzy_PP(self.clusters, self.traj.landmarks, t=1, t_max=3, planar=True)
         precision = pp / len(self.clusters)
         recall = pp / len(self.traj.landmarks)
+        f_measure = 2*precision*recall / (precision + recall)
+        
+        with open(self.work_dir/'eval3.json', 'w') as f:
+            json.dump({
+                "PP": pp,
+                "FN": fn,
+                "matches": matches,
+                "pprecision": precision,
+                "precall": recall
+            },f, indent=4)
+        
+        print(f"PP: {pp}/{len(self.traj.landmarks)}")
+        print(f"FN: {fn}/{len(self.traj.landmarks)}")
+        print(f"FPTP-3: {pp:.3f}, precision: {precision:.3f}, recall: {recall:.3f}, f-measure: {f_measure:.3f}")
+        print("-"*30)
+        
+        pp, fn, matches = fuzzy_PP(self.clusters, self.traj.landmarks, t=1, t_max=6, planar=True)
+        precision = pp / len(self.clusters)
+        recall = pp / len(self.traj.landmarks)
+        f_measure = 2*precision*recall / (precision + recall)
 
-
-        print(f"precision: {precision}, recall: {recall}")
-
-        with open(self.work_dir/'eval.json', 'w') as f:
+        with open(self.work_dir/'eval6.json', 'w') as f:
             json.dump({
                 "PP": pp,
                 "FN": fn,
@@ -358,39 +376,11 @@ class AssetLocalizationManager:
                 "precall": recall
             },f, indent=4)
 
-        print()
-        # matches = {l:None for l in self.traj.landmarks}
-        # unnassigned_clusters = copy.deepcopy(self.clusters)
-        
-        # for l_id, landmark in self.traj.landmarks.items():
-        #     # find the index of the closest cluster with the correct semantic class
-        #     cluster_dists = [np.linalg.norm(landmark['projected_coord'][:2] - c.centroid[:2]) 
-        #                      for c in unnassigned_clusters if c.category == landmark['class']]
-        #     if len(cluster_dists) > 0:
-        #         cl_idx = np.argmin(cluster_dists)
-        #         selected_cluster = unnassigned_clusters[cl_idx]
-        #         # check whether the distance is below threshold    
-        #         if np.linalg.norm(landmark['projected_coord'][:2] - selected_cluster.centroid[:2]) < dist_threshold:
-        #             matches[l_id] = selected_cluster.id
-        #             print(f"GT match: {l_id} <--> cluster-{selected_cluster.id}")
-        #             print(f"class: {landmark['class']} x {selected_cluster.category}")
-        #             unnassigned_clusters.pop(cl_idx)
-        #         else:
-        #             print(f"distance too high for {l_id} <--> cluster-{selected_cluster.id}")
-        #             print(np.linalg.norm(landmark['projected_coord'][:2] - selected_cluster.centroid[:2]))
+        print(f"PP: {pp}/{len(self.traj.landmarks)}")
+        print(f"FN: {fn}/{len(self.traj.landmarks)}")
+        print(f"FPTP-6: {pp:.3f}, precision: {precision:.3f}, recall: {recall:.3f}, f-measure: {f_measure:.3f}")
+        print("-"*50)
 
-        #     if matches[l_id] is None:
-        #         print(f"no match for {l_id}")
-        
-        # correct_count = 0
-        # for m in matches.values():
-        #     if m is not None:
-        #         correct_count += 1
-
-        # precision = correct_count / len(self.clusters)
-        # recall = correct_count / len(self.traj.landmarks)
-        # print(f"correctly localized: {correct_count} ")
-        # print(f"precision: {precision}, recall: {recall}")
 
     def map(self, cfg:config.Map):
         map = MapVisualizer(map_center=cfg.map_center, zoom=cfg.map_zoom)
@@ -410,6 +400,6 @@ class AssetLocalizationManager:
 
 if __name__== "__main__":
     # config_path = Path(sys.argv[1])
-    config_path = 'config/latest_arbes.toml'
+    config_path = 'config/arbes_dbscan_best.toml'
     assloc = AssetLocalizationManager(config_path)
     assloc.run()

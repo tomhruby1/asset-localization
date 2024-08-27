@@ -49,6 +49,7 @@ class Prefiltering:
     mean_dist_from_cam: float
     max_dist_from_cam: float
     min_score: float
+    max_dist_between_rays: float
 
 @dataclass
 class Features:
@@ -78,6 +79,7 @@ class ClusteringBihierarchical(Clustering):
     t1: float
     t2: float
     alpha: float
+    minPts: int
 
 @dataclass
 class Evaluation:
