@@ -15,7 +15,7 @@ from clustering import clustering_bihierarchical, clustering_dbscan
 from rerun_visualization import visualize_trajectory, visualize_midpoint_clusters, init_visualization, visualize_rays, visualize_points, SOME_COLORS, visualize_ground_truth_landmarks
 from deep_features import genereate_deep_features_midpoints, generate_deep_features_2
 # from tools.undistort_images import undistort_imgs
-# from tools.rotate_images import rotate_imgs
+from tools.rotate_images import rotate_imgs
 from trajectory_data import TrajectoryData
 from evaluation import fuzzy_PP
 from map import MapVisualizer
@@ -67,8 +67,9 @@ class AssetLocalizationManager:
 
         if not (self.work_dir/ROTATED_DIR).exists():
             # undistort here
-            undistort_imgs(self.reel_frames_dir, self.work_dir/UNDISTORTED_DIR, self.calib_p)
             rotate_imgs(self.work_dir/UNDISTORTED_DIR, self.work_dir/ROTATED_DIR)
+        # if not (self.workd_dir/UNDISTORTED_DIR).exists():
+        #     undistort_imgs(self.reel_frames_dir, self.work_dir/UNDISTORTED_DIR, self.calib_p)
         else:
             print('undistortion & rotation already done')
         # start rerun visualization

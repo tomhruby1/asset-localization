@@ -11,7 +11,7 @@ visualize_filtered = true
 
 [INITIALIZATION]
 reel_frames = "/media/tomas/samQVO_4TB_D/asset-detection-datasets/drtinova_1/data/reel_0003_20240619-114020_drtinova1"
-work_dir = "/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new_4_bihierarchical"
+work_dir = "/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_test"
 undistort = false
 
 [DETECTION] 
