@@ -14,8 +14,8 @@ import config
 from clustering import clustering_bihierarchical, clustering_dbscan
 from rerun_visualization import visualize_trajectory, visualize_midpoint_clusters, init_visualization, visualize_rays, visualize_points, SOME_COLORS, visualize_ground_truth_landmarks
 from deep_features import genereate_deep_features_midpoints, generate_deep_features_2
-from tools.undistort_images import undistort_imgs
-from tools.rotate_images import rotate_imgs
+# from tools.undistort_images import undistort_imgs
+# from tools.rotate_images import rotate_imgs
 from trajectory_data import TrajectoryData
 from evaluation import fuzzy_PP
 from map import MapVisualizer
@@ -79,9 +79,10 @@ class AssetLocalizationManager:
     def detection(self, cfg:config.Detection):
         if not (self.work_dir/'detections.json').exists():
             # TODO: replace this with an inference call 
-            detections_p = '/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new/detections.json'
-            # MED = "/media/tomas/samQVO_4TB_D/asset-detection-datasets/drtinova_med_u_track/data_m/detections/detections.json"
-            shutil.copyfile(detections_p, self.work_dir/'detections.json')
+            # detections_p = '/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new/detections.json'
+            # # MED = "/media/tomas/samQVO_4TB_D/asset-detection-datasets/drtinova_med_u_track/data_m/detections/detections.json"
+            # shutil.copyfile(detections_p, self.work_dir/'detections.json')
+            raise Exception(f"detections.json not found in the work directory: {self.work_dir}")
         
         self.detections_p = self.work_dir/'detections.json'
 
@@ -399,7 +400,12 @@ class AssetLocalizationManager:
         print(f"done") 
 
 if __name__== "__main__":
-    # config_path = Path(sys.argv[1])
-    config_path = 'config/arbes_dbscan_best.toml'
+    if len(sys.argv) == 1:
+        config_path = 'config/latest.toml'
+    elif len(sys.argv) == 2:
+        config_path = Path(sys.argv[1])
+    else:
+        raise Exception("unnexpected amount of input arguments")
+    
     assloc = AssetLocalizationManager(config_path)
     assloc.run()

@@ -1,0 +1,73 @@
+# read all hardcoded stuff from here
+
+# THE ASSET DETECTION & LOCALIZATION PIPELINE
+[VISUALIZATION]
+visualize_trajectory = true
+visualize_clusters = true
+visualize_cluster_centroids = true
+visualize_rays = true
+visualize_filtered = true
+# midpoint_ray_threshold = 10 # discard needed?
+
+[INITIALIZATION]
+reel_frames = "/media/tomas/samQVO_4TB_D/asset-detection-datasets/drtinova_1/data/reel_0003_20240619-114020_drtinova1"
+work_dir = "/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new_4_bihierarchical"
+undistort = false
+
+[DETECTION] 
+command = "" # done by docker just povide command/script to run it
+
+[RAYCASTING] # in: reel + detections   out: rays, midpoints, traj (also serialize to file)
+camera_poses = '/media/tomas/samQVO_4TB_D/assdet-experiments/drtinova_u_new/cameras_exported_projected_wgs84_utm_33n.txt'
+cam_frames_suffix = "jpg"
+process_sensors = ["cam0", "cam1", "cam2", "cam3", "cam5"]
+# frames = [517, , 519, , 521, , 523, 524, 525, , , 528, 529, 530, 531, 532]
+frames = 'all' # TODO: solve enormous matrix memory issues
+every_nth = 1
+undistort = false
+flatten_rays = false
+visualize_frames = false
+visualize_images = false
+debug = false
+
+[PREFILTERING] # distance 
+mean_dist_from_cam = 40
+max_dist_from_cam = 40
+min_score = 0.4
+max_dist_between_rays = 2
+
+[FEATURES] # extra features by another NN
+# TODO: rotate stuff on runtime here
+checkpoint = "/home/tomas/traffi-signs-training/tinyResnet_128x128_nd_aug_va_991/ResnetTiny_epoch_28.pth"
+classes_info = "traffic_signs_features/info.json"
+softmax = true
+batch_size = 160
+# union_method = 'mul' 
+debug = true
+
+[FILTERING]
+product_feature_max_t = 0.4 # ignore FP detections -- misaligned softmax vectors should be by an order smaller
+ray_epsilon_neighborhood = 2
+
+[CLUSTERING]
+weighted_centroid = true
+
+# only one of the methods expected here
+[CLUSTERING.dbscan]
+eps = 4
+minPts = 6
+semantic_cluster_splitting = true
+
+# OR
+# t2 = 0.5 # semantic distance threshold
+# alpha = 0.8 # in (0,1) -- weight of spatiality 
+# minPts = 3 # min points in cluster for it to be kept
+
+[EVALUATION]
+# GNSS_small = easy eval challenge
+ground_truth_landmarks = '/media/tomas/samQVO_4TB_D/asset-detection-datasets/drtinova_small_u_track/GNSS_small.csv'
+
+[MAP]
+utm_zone = 33 # universal transverse mercator
+map_center = [50.0755, 14.4378] # (lat, lon)
+map_zoom = 12
